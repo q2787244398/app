@@ -380,6 +380,7 @@ struct LogRowView: View {
         case .db:       return Color(hex: "6366F1")
         case .download: return Color(hex: "EC4899")
         case .welfare:  return Color(hex: "F97316")
+        case .node:     return Color(hex: "14B8A6")
         }
     }
 }

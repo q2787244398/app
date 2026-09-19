@@ -10308,6 +10308,8 @@ class CloudDriveManager: ObservableObject {
                     } else {
                         result = try await resolveBaiduPlayURL(shareURL: baseURL, bduss: token.value)
                     }
+                case .uc:
+                    result = try await resolveUCPlayURL(shareURL: baseURL, cookie: token.value)
                 case .one15, .pan123, .pan139, .pan189, .xunlei:
                     // Node 托管网盘：115/123/139/189/迅雷 由 Node 常驻系统解析（A1 接缝），
                     // 原生路链已废弃；到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
