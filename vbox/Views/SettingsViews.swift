@@ -1636,7 +1636,7 @@ struct CloudAuthCenterView: View {
                 NativeCloudQRLoginView(driveType: .xunlei)
             }
             .sheet(isPresented: $showGuangyaQR) {
-                NodeGuangyaQRLoginView()
+                NodeGuangyaLoginRootView()
             }
             .sheet(isPresented: $showWoniu4kLogin) {
                 NodeWoniu4kLoginView()

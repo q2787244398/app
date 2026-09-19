@@ -78,69 +78,59 @@ struct NodeGuangyaQRLoginView: View {
     @State private var timer: Timer? = nil
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
-                    Text("光鸭网盘扫码授权")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("光鸭网盘扫码授权")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if let qrImage {
-                        Image(uiImage: qrImage)
-                            .resizable()
-                            .interpolation(.none)
-                            .scaledToFit()
-                            .frame(width: 240, height: 240)
-                            .padding(10)
-                            .background(Color.white)
-                            .cornerRadius(16)
-                            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
-                    } else {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.gray.opacity(0.08))
-                            .frame(width: 260, height: 260)
-                            .overlay(
-                                ProgressView()
-                                    .scaleEffect(1.4)
-                            )
-                    }
-
-                    statusCard
-                    tipCard
-
-                    Button(action: {
-                        Task { await regenerate() }
-                    }) {
-                        Text(isPolling ? "重新生成二维码" : "生成二维码")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(hex: "E11D48"))
-                            .cornerRadius(12)
-                    }
-                    .disabled(isGenerating)
+                if let qrImage {
+                    Image(uiImage: qrImage)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFit()
+                        .frame(width: 240, height: 240)
+                        .padding(10)
+                        .background(Color.white)
+                        .cornerRadius(16)
+                        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+                } else {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.gray.opacity(0.08))
+                        .frame(width: 260, height: 260)
+                        .overlay(
+                            ProgressView()
+                                .scaleEffect(1.4)
+                        )
                 }
-                .padding(16)
-            }
-            .background(Color(uiColor: .systemBackground))
-            .navigationTitle("光鸭网盘授权")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("关闭") { dismiss() }
-                        .foregroundColor(Color(hex: "E11D48"))
+
+                statusCard
+                tipCard
+
+                Button(action: {
+                    Task { await regenerate() }
+                }) {
+                    Text(isPolling ? "重新生成二维码" : "生成二维码")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(hex: "E11D48"))
+                        .cornerRadius(12)
                 }
+                .disabled(isGenerating)
             }
-            .onAppear {
-                Task { await startLogin() }
-            }
-            .onDisappear {
-                timer?.invalidate()
-                timer = nil
-                cancelTask()
-            }
+            .padding(16)
+        }
+        .background(Color(uiColor: .systemBackground))
+        .onAppear {
+            Task { await startLogin() }
+        }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+            cancelTask()
         }
     }
 
@@ -252,6 +242,219 @@ struct NodeGuangyaQRLoginView: View {
         guard let taskId, !taskId.isEmpty else { return }
         Task {
             try? await NodeLoginAPIClient.request("POST", "/website/api/login/cancel", body: ["taskId": taskId])
+        }
+    }
+}
+
+// MARK: - 光鸭网盘登录入口（扫码 / 短信验证码 双模式）
+//
+// P1 追加：光鸭后端同时支持扫码（OAuth device code）与手机号短信验证码，
+// TVS 配置中心默认走短信登录（/website/api/guangya/sms/send + sms/login）。
+// 扫码链路依赖光鸭 App 的扫码确认，部分环境下无响应，故提供短信兜底。
+
+struct NodeGuangyaLoginRootView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var mode = 0 // 0=扫码 1=短信
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                Picker("登录方式", selection: $mode) {
+                    Text("扫码登录").tag(0)
+                    Text("手机验证码").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+
+                if mode == 0 {
+                    NodeGuangyaQRLoginView()
+                } else {
+                    NodeGuangyaSMSLoginView()
+                }
+            }
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("光鸭网盘授权")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                        .foregroundColor(Color(hex: "E11D48"))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 光鸭网盘手机短信验证码登录（Node 托管）
+
+struct NodeGuangyaSMSLoginView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var phone = ""
+    @State private var code = ""
+    @State private var smsTaskId: String? = nil
+    @State private var statusText = "输入手机号后获取验证码"
+    @State private var errorText = ""
+    @State private var isSending = false
+    @State private var isLoggingIn = false
+    @State private var countdown = 0
+    @State private var countdownTimer: Timer? = nil
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("使用光鸭注册手机号接收验证码，登录成功后自动回收 Token。")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        TextField("光鸭手机号", text: $phone)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .font(.system(size: 14))
+                            .keyboardType(.phonePad)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+
+                        Button(action: {
+                            Task { await sendSms() }
+                        }) {
+                            Text(countdown > 0 ? "\(countdown)s" : "获取验证码")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(countdown > 0 ? .gray : Color(hex: "E11D48"))
+                                .frame(width: 90, height: 34)
+                                .background(Color.gray.opacity(0.08))
+                                .cornerRadius(8)
+                        }
+                        .disabled(isSending || countdown > 0)
+                    }
+
+                    TextField("短信验证码", text: $code)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(size: 14))
+                        .keyboardType(.numberPad)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+                .padding(14)
+                .background(Color.gray.opacity(0.04))
+                .cornerRadius(12)
+
+                statusCard
+
+                Button(action: {
+                    Task { await loginSms() }
+                }) {
+                    Text(isLoggingIn ? "登录中..." : "验证码登录")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(canLogin ? Color(hex: "E11D48") : Color.gray)
+                        .cornerRadius(12)
+                }
+                .disabled(!canLogin || isLoggingIn)
+
+                Text("与 TVS 配置中心的「光鸭手机号 + 短信验证码」登录一致。")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(16)
+        }
+        .onDisappear {
+            countdownTimer?.invalidate()
+        }
+    }
+
+    private var canLogin: Bool {
+        !phone.isEmpty && !code.isEmpty
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(errorText.isEmpty ? Color.green : Color.red)
+                .frame(width: 8, height: 8)
+            Text(errorText.isEmpty ? statusText : errorText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.gray.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    // MARK: 短信流程（对齐 bundle renderGuangYa / kAr / vAr）
+
+    private func sendSms() async {
+        let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorText = "请输入光鸭手机号"
+            return
+        }
+        errorText = ""
+        isSending = true
+        statusText = "正在发送验证码..."
+        defer { isSending = false }
+        do {
+            let result = try await NodeLoginAPIClient.request(
+                "POST",
+                "/website/api/guangya/sms/send",
+                body: ["phone": trimmed]
+            )
+            smsTaskId = result["taskId"] as? String ?? ""
+            statusText = result["msg"] as? String ?? "验证码已发送"
+            startCountdown()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "发送失败"
+        }
+    }
+
+    private func loginSms() async {
+        guard let smsTaskId, !smsTaskId.isEmpty else {
+            errorText = "请先获取验证码"
+            return
+        }
+        isLoggingIn = true
+        errorText = ""
+        statusText = "正在登录..."
+        defer { isLoggingIn = false }
+        do {
+            _ = try await NodeLoginAPIClient.request(
+                "POST",
+                "/website/api/guangya/sms/login",
+                body: ["taskId": smsTaskId, "code": code.trimmingCharacters(in: .whitespacesAndNewlines)]
+            )
+            statusText = "登录成功"
+            // 把 Node 侧凭据拉回 Keychain（token 落点 extra["token"]）
+            _ = await NodeCredentialSyncService.shared.saveProfile()
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "登录失败"
+        }
+    }
+
+    private func startCountdown() {
+        countdownTimer?.invalidate()
+        countdown = 60
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+            if countdown > 1 {
+                countdown -= 1
+            } else {
+                countdown = 0
+                timer.invalidate()
+                countdownTimer = nil
+            }
         }
     }
 }
