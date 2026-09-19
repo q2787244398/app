@@ -388,6 +388,12 @@ final class RemoteSourceConfigManager: ObservableObject {
             guard let api = site.api, !api.isEmpty else { continue }
             let key = site.key.isEmpty ? site.name : site.key
 
+            // S2-2：Node 托管蜘蛛跳过 JS 缓存下载（api 指向本地 Node 路由，GET 无意义）
+            if isNodeManagedSite(site) {
+                print("[RemoteSource] ⏭️ Node 托管蜘蛛跳过缓存: \(site.name) (\(key))")
+                continue
+            }
+
             // 解析 JS 文件 URL
             let resolvedURL: String
             if api.hasPrefix("./") || (!api.hasPrefix("http://") && !api.hasPrefix("https://") && api.hasSuffix(".js")) {
@@ -449,6 +455,20 @@ final class RemoteSourceConfigManager: ObservableObject {
         cleanupExpiredJSCache(validKeys: cachedKeys)
 
         print("[RemoteSource] JS 蜘蛛引擎缓存完成，有效缓存: \(cachedKeys.count) 个")
+    }
+
+    /// Node 托管蜘蛛识别（与 SpiderManager.isNodeSite 同规则，供缓存跳过使用）
+    /// - key 前缀 `nodejs_` / `csp_`（type 3）或 group == "node" 或 api 指向本地 Node 路由
+    private func isNodeManagedSite(_ site: SiteConfig) -> Bool {
+        if site.group == "node" { return true }
+        let key = site.key.isEmpty ? site.name : site.key
+        if key.hasPrefix("nodejs_") { return true }
+        if key.hasPrefix("csp_") && site.type == 3 { return true }
+        guard let api = site.api else { return false }
+        if api.hasPrefix("nodejs_") { return true }
+        if api.hasPrefix("csp_") && site.type == 3 { return true }
+        let lower = api.lowercased()
+        return lower.contains("://127.0.0.1") && lower.contains("/spider/")
     }
 
     /// 下载单个 JS 文件到缓存目录

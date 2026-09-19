@@ -352,6 +352,7 @@
 		NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0206 /* NodeCredentialSyncService.swift */; };
 		NODEC0DE0108 /* NodeLoginViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0207 /* NodeLoginViews.swift */; };
 		NODEC0DE0109 /* NodePanResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0208 /* NodePanResolver.swift */; };
+		NODEC0DE0110 /* NodeSpiderEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0209 /* NodeSpiderEngine.swift */; };
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
@@ -722,6 +723,7 @@
 		NODEC0DE0206 /* NodeCredentialSyncService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeCredentialSyncService.swift; sourceTree = "<group>"; };
 		NODEC0DE0207 /* NodeLoginViews.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeLoginViews.swift; sourceTree = "<group>"; };
 		NODEC0DE0208 /* NodePanResolver.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodePanResolver.swift; sourceTree = "<group>"; };
+		NODEC0DE0209 /* NodeSpiderEngine.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeSpiderEngine.swift; sourceTree = "<group>"; };
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
@@ -1704,6 +1706,7 @@
 				NODEC0DE0203 /* NodeRuntimeManager.swift */,
 				NODEC0DE0206 /* NodeCredentialSyncService.swift */,
 				NODEC0DE0208 /* NodePanResolver.swift */,
+				NODEC0DE0209 /* NodeSpiderEngine.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -2173,6 +2176,7 @@
 				EB16EF7FE7BC7C2CD933D325 /* GoProxyManager.swift in Sources */,
 				NODEC0DE0108 /* NodeLoginViews.swift in Sources */,
 				NODEC0DE0109 /* NodePanResolver.swift in Sources */,
+				NODEC0DE0110 /* NodeSpiderEngine.swift in Sources */,
 				E4BAB124DC822C16246A5723 /* GoProxyManager.swift in Sources */,
 				4BAD3ED43EDF4635500AD512 /* GoProxyManager.swift in Sources */,
 				2636A01BFB9E404B9619081E /* GoProxyManager.swift in Sources */,

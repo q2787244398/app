@@ -13,6 +13,7 @@ enum SiteMode {
     case pythonSpider   // Python蜘蛛模式：加载.py脚本到Python引擎
     case apiEndpoint    // API模式：直接HTTP调用CMS接口
     case zhanyuan       // 站源模式：HTML解析
+    case node           // Node 托管蜘蛛模式：桥接 127.0.0.1 Node 常驻系统（形态 A''，P2-03）
     case unsupported    // 不支持的类型（jar包等）
 }
 
@@ -114,6 +115,15 @@ class SpiderManager: ObservableObject {
     /// 根据站点配置判断其实际工作模式
     /// 核心逻辑：type=3 不一定是JS蜘蛛，需根据 api 字段特征判断
     func resolveSiteMode(site: SiteConfig) -> SiteMode {
+        // P2-03：Node 托管蜘蛛识别（形态 A''，优先判断，独立于 type 分支）
+        // 识别依据（双保险）：
+        //   1. key 前缀 nodejs_（远程源 manifest / 订阅源统一标记）
+        //   2. group == "node"（manifest 显式分组标记）
+        //   3. api 指向本地 Node 路由（http://127.0.0.1:PORT/spider/...）
+        if isNodeSite(site) {
+            return .node
+        }
+
         guard let api = site.api, !api.isEmpty else {
             return .unsupported
         }
@@ -162,6 +172,52 @@ class SpiderManager: ObservableObject {
         default:
             return .unsupported
         }
+    }
+
+    // MARK: - Node 托管蜘蛛识别与注册（P2-03，形态 A''）
+
+    /// 判断站点是否为 Node 托管蜘蛛（双保险识别）
+    /// - key 前缀 `nodejs_`：远程源 manifest / 订阅源统一标记（主依据）
+    /// - group == "node"：manifest 显式分组标记（辅助依据，K1 字段扩展后可用）
+    /// - api 指向本地 Node 路由（`http://127.0.0.1:PORT/spider/...`）：兼容直链形态
+    func isNodeSite(_ site: SiteConfig) -> Bool {
+        if site.group == "node" { return true }
+        let key = site.key.isEmpty ? site.name : site.key
+        if key.hasPrefix("nodejs_") { return true }
+        // 订阅源 csp_ 类名形态（TVBox 蜘蛛类名）：key 或 api 为 csp_Xxx → Node 托管（P2csp）
+        // 限定 type==3，避免误伤其他类型；此前该类站点被当作 jar 包跳过（.unsupported），
+        // 仓库源（type 1 API / .js/.py 相对路径）不包含 csp_ 条目，零影响。
+        if key.hasPrefix("csp_") && site.type == 3 { return true }
+        if let api = site.api, api.hasPrefix("nodejs_") { return true }
+        if let api = site.api, api.hasPrefix("csp_") && site.type == 3 { return true }
+        if let api = site.api {
+            // 本地 Node 常驻路由：http://127.0.0.1:58080/spider/... 或 https?://127.0.0.1:/spider/
+            let lower = api.lowercased()
+            if lower.contains("://127.0.0.1") && lower.contains("/spider/") { return true }
+        }
+        return false
+    }
+
+    /// 注册 Node 托管蜘蛛引擎（不下载 JS，直接桥接常驻进程）
+    private func registerNodeEngine(for site: SiteConfig) {
+        let key = site.key.isEmpty ? site.name : site.key
+        if engines[key] != nil { return }
+        let engine = NodeSpiderEngine(siteKey: key)
+        engines[key] = engine
+        engineTypes[key] = .node
+        if !subscribedSites.contains(key) { subscribedSites.append(key) }
+        let nodeKey = engineNodeKey(key)
+        AppLogStore.shared.info(.spider, "[SpiderManager] ✅ Node 蜘蛛注册: \(site.name) (\(key)) → nodeKey=\(nodeKey)")
+    }
+
+    /// vbox 站点 key → Node 系统内蜘蛛 key（去掉 nodejs_/csp_ 前缀）
+    private func engineNodeKey(_ key: String) -> String {
+        var result = key
+        for prefix in ["nodejs_", "csp_"] where result.hasPrefix(prefix) {
+            result = String(result.dropFirst(prefix.count))
+            break
+        }
+        return result
     }
 
     // MARK: - 兜底源管理
@@ -506,7 +562,8 @@ globalThis.__JS_SPIDER__ = _spider;
                 return SiteConfig(
                     key: site.key, name: site.name, type: site.type, api: newAPI,
                     searchable: site.searchable, quickSearch: site.quickSearch, filterable: site.filterable,
-                    ext: site.ext, playerType: site.playerType, jar: site.jar, changeable: site.changeable
+                    ext: site.ext, playerType: site.playerType, jar: site.jar, changeable: site.changeable,
+                    playStrategy: site.playStrategy, playMode: site.playMode, panHosts: site.panHosts, group: site.group
                 )
             }
         }
@@ -667,7 +724,8 @@ globalThis.__JS_SPIDER__ = _spider;
                 return SiteConfig(
                     key: site.key, name: site.name, type: site.type, api: newAPI,
                     searchable: site.searchable, quickSearch: site.quickSearch, filterable: site.filterable,
-                    ext: site.ext, playerType: site.playerType, jar: site.jar, changeable: site.changeable
+                    ext: site.ext, playerType: site.playerType, jar: site.jar, changeable: site.changeable,
+                    playStrategy: site.playStrategy, playMode: site.playMode, panHosts: site.panHosts, group: site.group
                 )
             }
         }
@@ -717,7 +775,13 @@ globalThis.__JS_SPIDER__ = _spider;
         }
 
         // 尝试从订阅源的 spider 字段加载全局 JS 蜘蛛
-        if let spiderField = config.spider, !spiderField.isEmpty {
+        // P2spider：订阅源含 Node 托管站点时，spider 字段为 Node 蜘蛛库（bundle 无注入接口，
+        // 代码实证），跳过 vbox 本地"单蜘蛛"加载——避免无谓下载与错误加载；日志说明原因。
+        if config.sites.contains(where: { isNodeSite($0) }) {
+            if let spiderField = config.spider, !spiderField.isEmpty {
+                AppLogStore.shared.info(.spider, "[SpiderManager] ⏭️ 订阅源含 Node 托管站点，spider 字段由 Node 侧管理，跳过本地加载: \(spiderField.prefix(80))")
+            }
+        } else if let spiderField = config.spider, !spiderField.isEmpty {
             let spiderURL: String
             if spiderField.contains(";") {
                 spiderURL = spiderField.components(separatedBy: ";").first ?? spiderField
@@ -777,8 +841,16 @@ globalThis.__JS_SPIDER__ = _spider;
         var apiSitesToAdd: [SiteConfig] = []
         var pySitesToLoad: [(site: SiteConfig, resolvedURL: String)] = []
 
-        for site in config.sites where site.api != nil && !site.api!.isEmpty {
+        for site in config.sites {
             let mode = resolveSiteMode(site: site)
+
+            // 🟢 Node 托管蜘蛛（订阅源）：即使 api 为空（group:"node" / nodejs_ 前缀标记）也注册
+            if mode == .node {
+                registerNodeEngine(for: site)
+                continue
+            }
+            guard let api = site.api, !api.isEmpty else { continue }
+
             switch mode {
             case .jsSpider:
                 let api = site.api!
@@ -824,6 +896,9 @@ globalThis.__JS_SPIDER__ = _spider;
                 }
                 pySitesToLoad.append((site: site, resolvedURL: resolvedPyURL))
                 AppLogStore.shared.info(.spider, "[SpiderManager] 🐍 Python 蜘蛛站点: \(site.name) → \(resolvedPyURL)")
+            case .node:
+                // 🟢 Node 托管蜘蛛（订阅源）：直接注册 NodeSpiderEngine，不下载 JS
+                registerNodeEngine(for: site)
             case .zhanyuan:
                 break
             case .unsupported:
@@ -1089,13 +1164,21 @@ globalThis.__JS_SPIDER__ = _spider;
     private func loadRemoteSpiderEngines(baseURL: String, sites: [SiteConfig]) async {
         guard !sites.isEmpty else { return }
 
-        // 收集需要加载的 JS 蜘蛛站点 + Python 蜘蛛站点
+        // 收集需要加载的 JS 蜘蛛站点 + Python 蜘蛛站点 + Node 托管蜘蛛站点
         var jsSitesToLoad: [(site: SiteConfig, resolvedURL: String)] = []
         var pySitesToLoad: [(site: SiteConfig, resolvedURL: String)] = []
+        var nodeSitesToLoad: [SiteConfig] = []
 
         for site in sites {
-            guard let api = site.api, !api.isEmpty else { continue }
             let mode = resolveSiteMode(site: site)
+
+            // 🟢 Node 托管蜘蛛：直接注册 NodeSpiderEngine（不下载 JS、不占 20 引擎上限）。
+            //    即使 api 为空（仅 group:"node" / nodejs_ 前缀标记），也允许注册。
+            if mode == .node {
+                nodeSitesToLoad.append(site)
+                continue
+            }
+            guard let api = site.api, !api.isEmpty else { continue }
 
             // 🐍 Python Spider
             if mode == .pythonSpider {
@@ -1121,9 +1204,17 @@ globalThis.__JS_SPIDER__ = _spider;
             AppLogStore.shared.info(.spider, "[SpiderManager] 📋 Python 蜘蛛待加载: \(item.site.name) (key=\(key))")
         }
 
-        // 限制最多加载 JS 蜘蛛（避免内存）
+        // 限制最多加载 JS 蜘蛛（避免内存）；Node 托管蜘蛛不占此上限（S2-3 豁免）
         let maxRemoteSpiders = 20
         let jsSitesToProcess = Array(jsSitesToLoad.prefix(maxRemoteSpiders))
+
+        // 🟢 注册 Node 托管蜘蛛引擎（轻量桥接，不下载 JS，不受 20 上限约束）
+        if !nodeSitesToLoad.isEmpty {
+            for site in nodeSitesToLoad {
+                registerNodeEngine(for: site)
+            }
+            AppLogStore.shared.info(.spider, "[SpiderManager] ✅ 远程源 Node 蜘蛛注册完成: \(nodeSitesToLoad.count) 个")
+        }
 
         // 使用 TaskGroup 并发加载多个 JS 引擎
         await withTaskGroup(of: (key: String, success: Bool).self) { group in

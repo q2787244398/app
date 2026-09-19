@@ -38,11 +38,19 @@ struct SiteConfig: Codable {
     let jar: String?
     let changeable: Int?
     let playStrategy: String?
+    // P2-00 扩展（议题 18 K1）：Node 源识别与播放标识
+    /// 播放模式标识：normal / pan / hybrid（议题 15 定稿；Node 源随 manifest 下发）
+    let playMode: String?
+    /// 网盘宿主列表（playMode=pan 时用于播放分发，如 ["quark","ali"]）
+    let panHosts: [String]?
+    /// 站点分组标记：group == "node" 表示 Node 常驻系统托管源（node 识别辅助标记）
+    let group: String?
 
     init(key: String, name: String, type: Int, api: String? = nil,
          searchable: Int? = nil, quickSearch: Int? = nil, filterable: Int? = nil,
          ext: String? = nil, playerType: Int? = nil, jar: String? = nil,
-         changeable: Int? = nil, playStrategy: String? = nil) {
+         changeable: Int? = nil, playStrategy: String? = nil,
+         playMode: String? = nil, panHosts: [String]? = nil, group: String? = nil) {
         self.key = key
         self.name = name
         self.type = type
@@ -55,6 +63,9 @@ struct SiteConfig: Codable {
         self.jar = jar
         self.changeable = changeable
         self.playStrategy = playStrategy
+        self.playMode = playMode
+        self.panHosts = panHosts
+        self.group = group
     }
 
     init(from decoder: Decoder) throws {
@@ -77,6 +88,9 @@ struct SiteConfig: Codable {
         playerType = try? container.decode(Int.self, forKey: .playerType)
         changeable = try? container.decode(Int.self, forKey: .changeable)
         playStrategy = try? container.decode(String.self, forKey: .playStrategy)
+        playMode = try? container.decode(String.self, forKey: .playMode)
+        panHosts = try? container.decode([String].self, forKey: .panHosts)
+        group = try? container.decode(String.self, forKey: .group)
 
         // ext：兼容字符串和对象
         if let extStr = try? container.decode(String.self, forKey: .ext) {
@@ -93,6 +107,7 @@ struct SiteConfig: Codable {
     enum CodingKeys: String, CodingKey {
         case key, name, type, api, searchable, quickSearch, filterable
         case ext, playerType, jar, changeable, playStrategy
+        case playMode, panHosts, group
     }
 }
 

@@ -21,11 +21,19 @@ final class SpiderEngineFactory {
             engine = JSSpiderEngine()
         case .quickJS:
             engine = QJSSpiderEngine()
+        case .node:
+            // 形态 A''：Node 引擎不加载本地 JS，直接桥接 127.0.0.1 Node 进程
+            engine = NodeSpiderEngine(siteKey: key)
         }
 
         // 先在后台设置一个基础日志回调（只打印，不碰 UI）
         engine.onLog = { msg in
             print("[SpiderEngine|\(key)|\(engineType.displayName)] \(msg)")
+        }
+
+        // Node 引擎无需注入蜘蛛库 / 执行脚本，直接返回
+        guard engineType != .node else {
+            return engine
         }
 
         // 注入库 + 执行脚本（全部在后台线程）
