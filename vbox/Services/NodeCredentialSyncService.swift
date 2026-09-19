@@ -173,6 +173,101 @@ final class NodeCredentialSyncService: NSObject {
         return summary
     }
 
+    /// 是否为 Node 托管网盘（删除展示镜像时级联清除 Node 登录态）。
+    /// 显式枚举 7 个 Node 网盘，不依赖 managedProviders 键名（其键为 case 名，
+    /// 与 DriveType.rawValue 如 "115"/"123pan" 不一致，避免映射漏判）。
+    func isNodeManaged(_ driveType: CloudDriveManager.DriveType) -> Bool {
+        switch driveType {
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// driveType → managedProviders 键（case 名；与 rawValue 如 "115" 不一致）
+    private func providerKey(for driveType: CloudDriveManager.DriveType) -> String? {
+        switch driveType {
+        case .one15: return "one15"
+        case .pan123: return "pan123"
+        case .pan139: return "pan139"
+        case .pan189: return "pan189"
+        case .xunlei: return "xunlei"
+        case .guangya: return "guangya"
+        case .woniu4k: return "woniu4k"
+        default: return nil
+        }
+    }
+
+    /// 级联删除 Node 登录态：Node bundle 侧逐字段 DELETE + Keychain 主凭据删除
+    /// + wexfnwconfig.json 字段清理（防止 Node DELETE 失败后 pull 复活登录态）。
+    /// 供「复制粘贴 Token 兜底」列表删除 Node 镜像条目时调用；
+    /// 任一环节失败不中断，错误写入日志（播放/授权中心可查看）。
+    @discardableResult
+    func deleteNodeCredential(driveType: CloudDriveManager.DriveType) async -> NodeCredentialSyncSummary {
+        var summary = NodeCredentialSyncSummary()
+        guard let key = providerKey(for: driveType),
+              let spec = Self.managedProviders[key] else {
+            log("[NodeSync] ⚠️ \(driveType.displayName) 非 Node 托管网盘，跳过级联删除", .warn)
+            return summary
+        }
+
+        // 1) Node bundle 侧：逐字段 DELETE /website/api/credential/:provider/:field
+        for field in spec.fields {
+            do {
+                let path = "/website/api/credential/\(spec.nodeProvider)/\(field.nodeField)"
+                _ = try await requestJSON("DELETE", path)
+                log("[NodeSync] 🗑 已删除 Node 凭据 \(driveType.displayName).\(field.nodeField)")
+            } catch {
+                summary.errors.append("delete \(driveType.displayName).\(field.nodeField): \(error.localizedDescription)")
+                log("[NodeSync] ⚠️ 删除 Node 凭据 \(driveType.displayName).\(field.nodeField) 失败: \(error.localizedDescription)", .warn)
+            }
+        }
+
+        // 2) 配置文件兜底清理：直接从 wexfnwconfig.json 移除该网盘字段
+        removeConfigFileFields(driveType: driveType, spec: spec)
+
+        // 3) Keychain 主凭据：本地登录态强制退出（主线程，避免 UI 状态竞争；
+        //    同时清除 rawValue 键与 Node 同步的 case 名键）
+        await MainActor.run {
+            CloudDriveAuthManager.shared.removeCredentialAndAliases(for: driveType)
+        }
+
+        summary.duration = Date().timeIntervalSince(summary.startedAt)
+        log("[NodeSync] 🗑 \(driveType.displayName) Node 登录态已清除（Keychain + Node bundle）")
+        return summary
+    }
+
+    /// 直接从 wexfnwconfig.json 移除指定网盘的字段（防止 Node DELETE 失败后配置残留复活登录态）
+    private func removeConfigFileFields(driveType: CloudDriveManager.DriveType, spec: ProviderSpec) {
+        let fileURL = NodeRuntimeManager.shared.runtimeDir.appendingPathComponent("wexfnwconfig.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        var changed = false
+        for field in spec.fields {
+            if removeValueAtPath(&root, field.dbPath) { changed = true }
+        }
+        guard changed,
+              let out = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]),
+              let _ = try? out.write(to: fileURL) else { return }
+        log("[NodeSync] 🗑 已从 wexfnwconfig.json 清理 \(driveType.displayName) 凭据字段")
+    }
+
+    /// 沿路径移除嵌套字典中的值（返回是否发生变更）
+    private func removeValueAtPath(_ root: inout [String: Any], _ path: [String]) -> Bool {
+        guard let first = path.first else { return false }
+        if path.count == 1 {
+            guard root[first] != nil else { return false }
+            root.removeValue(forKey: first)
+            return true
+        }
+        guard var child = root[first] as? [String: Any] else { return false }
+        let changed = removeValueAtPath(&child, Array(path.dropFirst()))
+        if changed { root[first] = child }
+        return changed
+    }
+
     // MARK: - 内部实现
 
     private func performPush() async -> NodeCredentialSyncSummary {
@@ -312,22 +407,55 @@ final class NodeCredentialSyncService: NSObject {
         mirrorToLegacyTokens(driveType: driveType, credential: credential)
     }
 
-    /// 把光鸭/蜗牛的登录态镜像到「复制粘贴 Token 兜底」列表（纯展示 + 可删）。
-    /// 光鸭 Token 在 extra["token"]，蜗牛登录态在 cookie；解析仍走 Node（A1 接缝），
-    /// 镜像条目仅供用户在兜底界面查看/删除，不参与原生解析链路。
+    /// 把 Node 托管网盘的登录态镜像到「复制粘贴 Token 兜底」列表（展示 + 可删）。
+    /// 覆盖全部 Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛。
+    /// 镜像条目仅供用户在兜底界面查看/删除，不参与解析决策：
+    ///   光鸭/蜗牛解析走 Node（A1 接缝）；115/123/139/189/迅雷 解析读 Keychain primarySecret，
+    ///   savedTokens 仅作展示，不会影响解析（tokens(for:) 以 Keychain bestTokenValue 优先）。
     private func mirrorToLegacyTokens(driveType: String, credential: CloudDriveCredential) {
-        guard let driveType = CloudDriveManager.DriveType(rawValue: driveType) else { return }
+        // managedProviders 键为 case 名（one15/pan123/pan139/pan189），
+        // 与 DriveType.rawValue（"115"/"123pan"/"139pan"/"189pan"）不一致，先映射再取 rawValue。
+        let mapped: CloudDriveManager.DriveType?
         switch driveType {
+        case "one15": mapped = .one15
+        case "pan123": mapped = .pan123
+        case "pan139": mapped = .pan139
+        case "pan189": mapped = .pan189
+        case "xunlei": mapped = .xunlei
+        case "guangya": mapped = .guangya
+        case "woniu4k": mapped = .woniu4k
+        default: mapped = CloudDriveManager.DriveType(rawValue: driveType)
+        }
+        guard let driveType = mapped else { return }
+        let primary: String?
+        let name: String
+        switch driveType {
+        case .one15:
+            primary = credential.cookie
+            name = "115-Node"
+        case .pan123:
+            primary = credential.extra["auth"] ?? credential.extra["account"]
+            name = "123-Node"
+        case .pan139:
+            primary = credential.extra["session"]
+            name = "139-Node"
+        case .pan189:
+            primary = credential.cookie
+            name = "189-Node"
+        case .xunlei:
+            primary = credential.extra["config"]
+            name = "迅雷-Node"
         case .guangya:
-            if let token = credential.extra["token"], !token.isEmpty {
-                CloudDriveManager.shared.addOrReplaceToken(type: .guangya, name: "光鸭-Node", value: token)
-            }
+            primary = credential.extra["token"]
+            name = "光鸭-Node"
         case .woniu4k:
-            if let cookie = credential.cookie, !cookie.isEmpty {
-                CloudDriveManager.shared.addOrReplaceToken(type: .woniu4k, name: "蜗牛-Node", value: cookie)
-            }
+            primary = credential.cookie
+            name = "蜗牛-Node"
         default:
-            break
+            return
+        }
+        if let primary, !primary.isEmpty {
+            CloudDriveManager.shared.addOrReplaceToken(type: driveType, name: name, value: primary)
         }
     }
 

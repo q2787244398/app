@@ -2529,6 +2529,25 @@ final class CloudDriveAuthManager: ObservableObject {
         persist()
     }
 
+    /// 级联删除网盘凭据：同时清除 rawValue 键与 Node 同步使用的 case 名键
+    /// （如 115 同时存在 "115" 与 "one15" 两种 key），确保 Node 登录态彻底退出。
+    func removeCredentialAndAliases(for driveType: CloudDriveManager.DriveType) {
+        var changed = false
+        if credentials.removeValue(forKey: driveType.rawValue) != nil { changed = true }
+        let aliasKeys: [String]
+        switch driveType {
+        case .one15: aliasKeys = ["one15"]
+        case .pan123: aliasKeys = ["pan123"]
+        case .pan139: aliasKeys = ["pan139"]
+        case .pan189: aliasKeys = ["pan189"]
+        default: aliasKeys = []
+        }
+        for key in aliasKeys where credentials.removeValue(forKey: key) != nil {
+            changed = true
+        }
+        if changed { persist() }
+    }
+
     func bestTokenValue(for driveType: CloudDriveManager.DriveType) -> String? {
         guard let value = credential(for: driveType)?.primarySecret else { return nil }
         if driveType == .baidu, !isBaiduAccountCookie(value) {

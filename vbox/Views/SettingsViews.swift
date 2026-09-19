@@ -1536,6 +1536,7 @@ struct CloudAuthCenterView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var cloudDriveManager = CloudDriveManager.shared
     @StateObject private var authManager = CloudDriveAuthManager.shared
+    @ObservedObject private var nodeRuntime = NodeRuntimeManager.shared
     @State private var showTokenFetcher = false
     @State private var showQuarkNativeQR = false
     @State private var showUCNativeQR = false
@@ -1564,6 +1565,7 @@ struct CloudAuthCenterView: View {
         NavigationView {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
+                    nodeRuntimeStatusBanner
                     baiduAccountCard
                     quarkAccountCard
                     providerAccountCard(type: .ali, note: "阿里云盘使用官方网页扫码/登录获取 refresh_token，用于解析播放文件链接。")
@@ -1669,6 +1671,62 @@ struct CloudAuthCenterView: View {
                 CloudDriveWebAuthView(driveType: type)
             }
         }
+    }
+
+    // MARK: - Node 常驻系统状态横幅
+    //
+    // 启动状态可视化：授权中心顶部展示 Node 引擎 启动中 / 就绪 / 失败+原因 / 崩溃，
+    // 数据源 NodeRuntimeManager.shared（isSystemReady / isCrashed / lastError / statusInfo）。
+
+    private var nodeRuntimeStatusBanner: some View {
+        let (title, detail, color, icon) = nodeRuntimeStatusInfo
+        return HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(color)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("Node 常驻系统")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(color.opacity(0.12))
+                        .cornerRadius(6)
+                }
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+                    .lineLimit(2)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(color.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.25), lineWidth: 1))
+    }
+
+    private var nodeRuntimeStatusInfo: (String, String, Color, String) {
+        if nodeRuntime.isSystemReady {
+            return ("就绪", "端口 \(nodeRuntime.activePort) · 网盘解析链路可用", .green, "checkmark.circle.fill")
+        }
+        if nodeRuntime.isCrashed {
+            if let err = nodeRuntime.lastError, !err.isEmpty {
+                return ("失败", err, .red, "xmark.octagon.fill")
+            }
+            return ("崩溃", "Node 服务已停止，请重启 App 恢复", .red, "xmark.octagon.fill")
+        }
+        if nodeRuntime.statusInfo == "node-starting" {
+            return ("启动中", "Node 引擎正在拉起，请稍候…", .orange, "hourglass")
+        }
+        if nodeRuntime.statusInfo == "node-stopped" {
+            return ("未启动", "等待启动（App 启动后自动拉起）", .gray, "power")
+        }
+        return ("未知", "状态：\(nodeRuntime.statusInfo)", .gray, "questionmark.circle")
     }
 
     private var baiduAccountCard: some View {

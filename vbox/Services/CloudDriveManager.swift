@@ -1112,8 +1112,20 @@ class CloudDriveManager: ObservableObject {
 
     func removeToken(at index: Int) {
         guard index >= 0, index < savedTokens.count else { return }
+        let removed = savedTokens[index]
         savedTokens.remove(at: index)
         saveTokens()
+
+        // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛）：
+        // 删除展示镜像 = 退出该网盘 Node 登录态（级联清除 Keychain + Node bundle 凭据）
+        if let driveType = DriveType(rawValue: removed.type),
+           NodeCredentialSyncService.shared.isNodeManaged(driveType) {
+            // 清理该网盘残留的 -Node 镜像条目（登录态已清，避免列表仍显示）
+            savedTokens.removeAll { $0.type == removed.type && $0.name.hasSuffix("-Node") }
+            saveTokens()
+            self.log("[CloudDrive] 🗑 \(driveType.displayName) 展示镜像已删除，级联清除 Node 登录态")
+            Task { await NodeCredentialSyncService.shared.deleteNodeCredential(driveType: driveType) }
+        }
     }
 
     private func ensureVboxFolder(drive: DriveType, token: String) async throws -> String {
@@ -10246,10 +10258,13 @@ class CloudDriveManager: ObservableObject {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ★ 光鸭/蜗牛：Node 常驻系统托管（A1 接缝），不走原生 Token 链路
-        // 解析经 /spider/push/4/detail → /spider/push/4/play
+        // ★ Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛 全部走 A1 接缝
+        // （Node 常驻系统解析），废弃 vbox 原生路链。解析经
+        // /spider/push/4/detail → /spider/push/4/play，错误直接抛给播放端。
         // ═══════════════════════════════════════════════════════════
-        if driveType == .guangya || driveType == .woniu4k {
+        if driveType == .one15 || driveType == .pan123 || driveType == .pan139
+            || driveType == .pan189 || driveType == .xunlei
+            || driveType == .guangya || driveType == .woniu4k {
             self.log("[CloudDrive] 🔄 \(driveType.displayName) 走 A1 接缝（Node 常驻系统）")
             return try await resolveViaNodePan(shareURL: baseURL, driveType: driveType)
         }
@@ -10293,22 +10308,10 @@ class CloudDriveManager: ObservableObject {
                     } else {
                         result = try await resolveBaiduPlayURL(shareURL: baseURL, bduss: token.value)
                     }
-                case .one15:
-                    result = try await resolve115PlayURL(shareURL: baseURL, cid: token.value)
-                case .uc:
-                    if let fid = vboxParams["vbox_fid"], let shareToken = vboxParams["vbox_token"], !fid.isEmpty {
-                        result = try await resolveUCPlayURLForFile(shareURL: baseURL, cookie: token.value, fileFid: fid, shareFidToken: shareToken)
-                    } else {
-                        result = try await resolveUCPlayURL(shareURL: baseURL, cookie: token.value)
-                    }
-                case .pan123:
-                    result = try await resolve123PanPlayURL(shareURL: baseURL, token: token.value)
-                case .pan139:
-                    result = try await resolve139PanPlayURL(shareURL: baseURL, cookie: token.value)
-                case .pan189:
-                    result = try await resolve189PanPlayURL(shareURL: baseURL, cookie: token.value)
-                case .xunlei:
-                    result = try await resolveXunleiPlayURL(shareURL: baseURL, cookie: token.value)
+                case .one15, .pan123, .pan139, .pan189, .xunlei:
+                    // Node 托管网盘：115/123/139/189/迅雷 由 Node 常驻系统解析（A1 接缝），
+                    // 原生路链已废弃；到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
+                    throw AuthError.notAuthorized("\(driveType.displayName) 由 Node 常驻系统解析（A1 接缝），原生路链已废弃")
                 case .guangya, .woniu4k:
                     // 光鸭/蜗牛由 Node 常驻系统解析（A1 接缝），原生链路不参与；
                     // 到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。

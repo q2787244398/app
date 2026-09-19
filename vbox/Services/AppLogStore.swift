@@ -64,6 +64,7 @@ import UIKit
     case db = 6
     case download = 7
     case welfare = 8
+    case node = 9
     
     var displayName: String {
         switch self {
@@ -76,6 +77,7 @@ import UIKit
         case .db:       return "数据库"
         case .download: return "下载"
         case .welfare:  return "福利区"
+        case .node:     return "Node 常驻系统"
         }
     }
     
@@ -90,6 +92,7 @@ import UIKit
         case .db:       return "db"
         case .download: return "download"
         case .welfare:  return "welfare"
+        case .node:     return "node"
         }
     }
 }
@@ -640,6 +643,7 @@ final class AppLogStore: NSObject, ObservableObject {
         case "db":       category = .db
         case "download": category = .download
         case "welfare":  category = .welfare
+        case "node":     category = .node
         default:         return nil
         }
         

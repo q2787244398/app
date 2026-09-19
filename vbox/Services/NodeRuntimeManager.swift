@@ -234,7 +234,7 @@ final class NodeRuntimeManager: ObservableObject {
                     throw NodeRuntimeError.bundleResourceMissing(name)
                 }
                 try fm.copyItem(at: src, to: dst)
-                print("[NodeRuntime] 📄 首次部署数据文件: \(name)")
+                nodeLog(.info, "📄 首次部署数据文件: \(name)")
             }
         }
 
@@ -244,7 +244,7 @@ final class NodeRuntimeManager: ObservableObject {
             throw NodeRuntimeError.bundleResourceMissing("bundles/kstore_index.js")
         }
 
-        print("[NodeRuntime] ✅ 运行时文件就绪: \(runtimeDir.path)")
+        nodeLog(.info, "✅ 运行时文件就绪: \(runtimeDir.path)")
     }
 
     private func isResourceNewer(src: URL, dst: URL) -> Bool {
@@ -269,18 +269,18 @@ final class NodeRuntimeManager: ObservableObject {
            let manifestMD5 = manifest.md5,
            let local = try? Data(contentsOf: activeBundleURL),
            local.md5Hex == manifestMD5 {
-            print("[NodeRuntime] ✅ bundle 完整性校验通过 MD5=\(manifestMD5.prefix(8))")
+            nodeLog(.info, "✅ bundle 完整性校验通过 MD5=\(manifestMD5.prefix(8))")
             return
         }
 
         // 情况 B：bundle 缺失或与 manifest 不符 → 回退 App Bundle 资源
-        print("[NodeRuntime] ⚠️ bundle 与 manifest 不符或未登记，回退资源副本")
+        nodeLog(.warn, "⚠️ bundle 与 manifest 不符或未登记，回退资源副本")
         try restoreBundleFromResource()
 
         // 回退后重建 manifest（标记来源 bundled）
         if let restored = try? Data(contentsOf: activeBundleURL) {
             writeBundleManifest(md5: restored.md5Hex, source: "bundled", version: nil)
-            print("[NodeRuntime] ✅ bundle 已从资源恢复 MD5=\(restored.md5Hex.prefix(8))")
+            nodeLog(.info, "✅ bundle 已从资源恢复 MD5=\(restored.md5Hex.prefix(8))")
         }
     }
 
@@ -334,18 +334,18 @@ final class NodeRuntimeManager: ObservableObject {
         let fm = FileManager.default
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty else {
-            print("[NodeRuntime] ⚠️ bundle 拉取失败，回退本地缓存")
+            nodeLog(.warn, "⚠️ bundle 拉取失败，回退本地缓存")
             return
         }
         // 合理性校验：bundle 至少 1MB，防止下载到错误页/空包
         guard data.count > 1_000_000 else {
-            print("[NodeRuntime] ⚠️ bundle 拉取异常（\(data.count)B），丢弃")
+            nodeLog(.warn, "⚠️ bundle 拉取异常（\(data.count)B），丢弃")
             return
         }
         let md5 = data.md5Hex
         // 与本地缓存比对：一致则跳过写盘
         if let local = try? Data(contentsOf: activeBundleURL), local.md5Hex == md5 {
-            print("[NodeRuntime] ✅ bundle MD5 一致，无需更新")
+            nodeLog(.info, "✅ bundle MD5 一致，无需更新")
             return
         }
         // 原子写盘（先写临时文件再替换，避免写一半损坏）
@@ -355,7 +355,7 @@ final class NodeRuntimeManager: ObservableObject {
         try fm.moveItem(at: tmpURL, to: activeBundleURL)
         // 更新 manifest
         writeBundleManifest(md5: md5, source: "remote", version: nil)
-        print("[NodeRuntime] ✅ bundle 已更新 MD5=\(md5)")
+        nodeLog(.info, "✅ bundle 已更新 MD5=\(md5)")
     }
 
     // MARK: - Node 引擎启动（P1-01）
@@ -372,8 +372,8 @@ final class NodeRuntimeManager: ObservableObject {
         // 移除可能导致父进程看门狗退出的变量
         unsetenv("TVS_PARENT_PID")
 
-        print("[NodeRuntime] 🚀 启动 Node 引擎 PORT=\(activePort) NODE_PATH=\(runtimeDir.path)")
-        print("[NodeRuntime] 📦 BUNDLE_PATH=\(activeBundleURL.path)")
+        nodeLog(.info, "🚀 启动 Node 引擎 PORT=\(activePort) NODE_PATH=\(runtimeDir.path)")
+        nodeLog(.info, "📦 BUNDLE_PATH=\(activeBundleURL.path)")
 
         #if canImport(NodeMobile)
         // 在独立线程启动 Node（官方要求 2MB 栈空间）
@@ -385,7 +385,7 @@ final class NodeRuntimeManager: ObservableObject {
         thread.qualityOfService = .userInitiated
         thread.start()
         #else
-        print("[NodeRuntime] ⚠️ NodeMobile 未集成，Node 系统不可用（降级）")
+        nodeLog(.warn, "⚠️ NodeMobile 未集成，Node 系统不可用（降级）")
         #endif
     }
 
@@ -398,11 +398,11 @@ final class NodeRuntimeManager: ObservableObject {
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let status = json["status"] as? String {
                 if status == "ok" {
-                    print("[NodeRuntime] ✅ startup ack ok")
+                    nodeLog(.info, "✅ startup ack ok")
                     return true
                 } else {
                     let err = json["error"] as? String ?? "unknown"
-                    print("[NodeRuntime] ❌ startup ack error: \(err)")
+                    nodeLog(.error, "❌ startup ack error: \(err)")
                     return false
                 }
             }
@@ -432,7 +432,7 @@ final class NodeRuntimeManager: ObservableObject {
                 isSystemReady = true
                 statusInfo = "node-ready(\(activePort))"
                 postStatus()
-                print("[NodeRuntime] ✅ Node 自愈：心跳恢复，系统重新就绪")
+                nodeLog(.info, "✅ Node 自愈：心跳恢复，系统重新就绪")
             } else if statusInfo == "node-memory-warning" {
                 // 内存告警仅提示，健康恢复后还原就绪状态
                 statusInfo = "node-ready(\(activePort))"
@@ -440,7 +440,7 @@ final class NodeRuntimeManager: ObservableObject {
             }
         } else {
             consecutiveHealthFailures += 1
-            print("[NodeRuntime] ⚠️ 心跳失败 \(consecutiveHealthFailures)/\(maxHealthFailures)")
+            nodeLog(.warn, "⚠️ 心跳失败 \(consecutiveHealthFailures)/\(maxHealthFailures)")
             if consecutiveHealthFailures >= maxHealthFailures {
                 handleNodeCrash()
             }
@@ -478,7 +478,7 @@ final class NodeRuntimeManager: ObservableObject {
         statusInfo = "node-crashed"
         let message = "Node 常驻服务已停止（连续 \(maxHealthFailures) 次心跳失败）。请重启 App 恢复。"
         lastError = message
-        print("[NodeRuntime] ❌ \(message)")
+        nodeLog(.error, "❌ \(message)")
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .nodeRuntimeCrash, object: message)
         }
@@ -498,7 +498,7 @@ final class NodeRuntimeManager: ObservableObject {
                     isSystemReady = true
                     statusInfo = "node-ready(\(activePort))"
                     postStatus()
-                    print("[NodeRuntime] ✅ 前台恢复探测成功，Node 自愈")
+                    nodeLog(.info, "✅ 前台恢复探测成功，Node 自愈")
                 }
             }
             return
@@ -526,15 +526,15 @@ final class NodeRuntimeManager: ObservableObject {
                ackToken == token,
                let status = ack["status"] as? String {
                 if status == "ok" {
-                    print("[NodeRuntime] ✅ relisten ok token=\(token)")
+                    nodeLog(.info, "✅ relisten ok token=\(token)")
                 } else {
-                    print("[NodeRuntime] ⚠️ relisten error: \(ack["error"] ?? "unknown")")
+                    nodeLog(.warn, "⚠️ relisten error: \(ack["error"] ?? "unknown")")
                 }
                 return
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
-        print("[NodeRuntime] ⚠️ relisten ack 超时（HTTP 探活为准）")
+        nodeLog(.warn, "⚠️ relisten ack 超时（HTTP 探活为准）")
         // ack 超时后做一次 HTTP 探活确认
         let ok = await probeHealth()
         if !ok {
@@ -545,7 +545,7 @@ final class NodeRuntimeManager: ObservableObject {
     // MARK: - 内存告警（P1-19）
 
     @objc private func handleMemoryWarning() {
-        print("[NodeRuntime] 🧹 内存告警：Node 常驻进程占用较大，建议重启 App 释放")
+        nodeLog(.warn, "🧹 内存告警：Node 常驻进程占用较大，建议重启 App 释放")
         // 降级：不主动杀 Node（会丢失网盘会话），仅提示 + 状态标记
         statusInfo = "node-memory-warning"
         postStatus()
@@ -553,12 +553,18 @@ final class NodeRuntimeManager: ObservableObject {
 
     // MARK: - 工具
 
+    /// Node 统一日志：控制台 + 写入 AppLogStore（category .node，导出时生成 node.txt）
+    private func nodeLog(_ level: LogLevel, _ message: String) {
+        print("[NodeRuntime] \(message)")
+        AppLogStore.shared.log(level, .node, message)
+    }
+
     private func failStart(_ message: String) {
         isSystemReady = false
         isCrashed = true
         lastError = message
         statusInfo = "node-failed"
-        print("[NodeRuntime] ❌ 启动失败: \(message)")
+        nodeLog(.error, "❌ 启动失败: \(message)")
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .nodeRuntimeCrash, object: message)
         }
