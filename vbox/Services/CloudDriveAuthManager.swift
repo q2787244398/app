@@ -2447,6 +2447,14 @@ final class CloudDriveAuthManager: ObservableObject {
         if driveType == .baidu, let cookie = credential.cookie {
             return credential.state != .invalid && isBaiduAccountCookie(cookie)
         }
+        if driveType == .guangya {
+            // Node 托管：Token 落在 extra["token"]（不在 primarySecret 三字段内）
+            return credential.state != .invalid && (credential.extra["token"]?.isEmpty == false)
+        }
+        if driveType == .woniu4k {
+            // Node 托管：登录态 Cookie 落在 cookie 字段
+            return credential.state != .invalid && (credential.cookie?.isEmpty == false)
+        }
         return credential.state != .invalid && credential.primarySecret?.isEmpty == false
     }
 

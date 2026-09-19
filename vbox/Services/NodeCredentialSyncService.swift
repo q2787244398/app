@@ -358,6 +358,9 @@ final class NodeCredentialSyncService: NSObject {
     // MARK: - HTTP 层（带重试）
 
     private func requestJSON(_ method: String, _ path: String, body: [String: Any]? = nil, attempts: Int = 3) async throws -> [String: Any] {
+        if !NodeRuntimeManager.shared.isSystemReady {
+            try await waitForNodeReady(timeout: 15)
+        }
         guard NodeRuntimeManager.shared.isSystemReady else {
             throw NodeCredentialSyncError.nodeNotReady
         }
@@ -394,6 +397,20 @@ final class NodeCredentialSyncService: NSObject {
             }
         }
         throw lastError
+    }
+
+    /// 轮询等待 Node 常驻系统就绪；崩溃/启动失败时立即返回
+    private func waitForNodeReady(timeout: TimeInterval) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if NodeRuntimeManager.shared.isSystemReady {
+                return
+            }
+            if NodeRuntimeManager.shared.isCrashed {
+                throw NodeCredentialSyncError.nodeNotReady
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
     }
 
     // MARK: - 通知与日志

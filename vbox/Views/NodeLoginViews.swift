@@ -14,7 +14,11 @@ import WebKit
 
 struct NodeLoginAPIClient {
     /// 请求 bundle API，返回 JSON 字典；HTTP 非 2xx / code != 0 抛错
+    /// Node 未就绪时最多等待 readyTimeout 秒（App 刚启动/重启后引擎仍在拉起）
     static func request(_ method: String, _ path: String, body: [String: Any]? = nil, timeout: TimeInterval = 20) async throws -> [String: Any] {
+        if !NodeRuntimeManager.shared.isSystemReady {
+            try await waitForNodeReady(timeout: 15)
+        }
         guard NodeRuntimeManager.shared.isSystemReady else {
             throw NodeLoginError.nodeNotReady
         }
@@ -37,6 +41,20 @@ struct NodeLoginAPIClient {
             throw NodeLoginError.nodeRejected(json["msg"] as? String ?? "code=\(code)")
         }
         return json
+    }
+
+    /// 轮询等待 Node 常驻系统就绪；崩溃/启动失败时立即返回 false
+    private static func waitForNodeReady(timeout: TimeInterval) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if NodeRuntimeManager.shared.isSystemReady {
+                return
+            }
+            if NodeRuntimeManager.shared.isCrashed {
+                throw NodeLoginError.nodeNotReady
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
     }
 
     /// data URL 或裸 base64 → UIImage
