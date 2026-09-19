@@ -4,6 +4,10 @@ on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      mobile_vlc_url:
+        description: 'MobileVLCKit 备用下载地址（videolan.org 不可达时使用，可填 https 镜像或仓库内 file:// 路径）'
+        required: false
 
 jobs:
   build:
@@ -52,6 +56,7 @@ jobs:
             Pods
             Podfile.lock
             ~/.cocoapods/repos
+            ~/Library/Caches/CocoaPods/Pods
           key: ${{ runner.os }}-pods-${{ hashFiles('Podfile', 'Podfile.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
@@ -444,6 +449,8 @@ jobs:
           echo "Version: $MARKETING_VERSION Build: $BUILD_NUM"
 
       - name: 📦 Install CocoaPods dependencies
+        env:
+          MOBILE_VLC_KIT_URL: ${{ github.event.inputs.mobile_vlc_url || secrets.MOBILE_VLC_KIT_URL || '' }}
         run: |
           set -euo pipefail
           # 安装 cocoapods (已缓存则很快)
@@ -459,6 +466,22 @@ jobs:
             USE_REPO_UPDATE=""
           else
             echo "📦 Pods 缓存未命中，执行完整 repo-update"
+          fi
+
+          # MobileVLCKit 备用源解析（download.videolan.org 在 CI 常不可达）：
+          # 1) workflow_dispatch 输入 / secrets.MOBILE_VLC_KIT_URL（env 已注入）
+          # 2) 仓库内离线 tarball（Libraries/MobileVLCKit/MobileVLCKit-*.tar.xz）
+          if [ -z "$MOBILE_VLC_KIT_URL" ]; then
+            VLC_LOCAL_TARBALL=$(ls Libraries/MobileVLCKit/MobileVLCKit-*.tar.xz 2>/dev/null | head -1 || true)
+            if [ -n "$VLC_LOCAL_TARBALL" ]; then
+              export MOBILE_VLC_KIT_URL="file://$PWD/$VLC_LOCAL_TARBALL"
+              echo "📦 使用仓库内离线 MobileVLCKit: $VLC_LOCAL_TARBALL"
+            fi
+          fi
+          if [ -n "${MOBILE_VLC_KIT_URL:-}" ]; then
+            echo "📦 MobileVLCKit 使用备用源: ${MOBILE_VLC_KIT_URL}"
+          else
+            echo "📦 MobileVLCKit 使用官方源 download.videolan.org"
           fi
 
           # MobileVLCKit 的下载服务器 download.videolan.org 经常超时，需要重试
@@ -477,6 +500,9 @@ jobs:
             fi
           done
           echo "❌ pod install 多次重试后仍失败"
+          echo "💡 提示：若为 MobileVLCKit 下载失败（download.videolan.org 不可达），"
+          echo "   请用 workflow_dispatch 手动触发并填写 mobile_vlc_url 备用源，"
+          echo "   或将离线包放入仓库 Libraries/MobileVLCKit/MobileVLCKit-3.6.0b12-8a6d7aeb-6ceb56b8.tar.xz 后重试"
           exit 1
 
       - name: 🔧 修复 PushPlayView/PushPlayStore 路径 (pod install 后)
