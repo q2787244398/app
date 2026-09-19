@@ -1082,6 +1082,11 @@ class CloudDriveManager: ObservableObject {
             }
             savedTokens.removeAll { $0.type == type.rawValue && $0.name == name }
         } else {
+            // 幂等保护：值未变化直接返回，避免镜像同步等重复写入时
+            // 无意义地触发 @Published savedTokens 同步重绘（栈溢出防护之一）
+            if savedTokens.contains(where: { $0.type == type.rawValue && $0.value == value && $0.name == name }) {
+                return
+            }
             savedTokens.removeAll { $0.type == type.rawValue }
         }
         savedTokens.append(DriveToken(type: type.rawValue, name: name, value: value))

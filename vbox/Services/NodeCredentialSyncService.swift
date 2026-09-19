@@ -297,6 +297,10 @@ final class NodeCredentialSyncService: NSObject {
     private func performPull() async -> NodeCredentialSyncSummary {
         var summary = NodeCredentialSyncSummary()
         var pulled = Set<String>()
+        // 统一收集待落库凭据，最后在 MainActor 上一次性写入：
+        // 避免在扫码登录等深层 async 调用链内同步触发 @Published（credentials/savedTokens）
+        // 导致 CloudAuthCenterView 深度嵌套重绘、主线程栈溢出（SIGBUS / ___chkstk_darwin）。
+        var pending: [(driveType: String, values: [String: String], spec: ProviderSpec)] = []
 
         // 1) HTTP：GET /website/api/credentials（bundle 权威读接口，覆盖 4 盘）
         do {
@@ -312,7 +316,7 @@ final class NodeCredentialSyncService: NSObject {
                         }
                     }
                     guard !values.isEmpty else { continue }
-                    upsertCredential(driveType: driveType, values: values, spec: spec)
+                    pending.append((driveType, values, spec))
                     pulled.insert(driveType)
                     log("[NodeSync] ✅ 拉取 \(driveType)（HTTP，\(values.count) 个字段）")
                 }
@@ -333,13 +337,21 @@ final class NodeCredentialSyncService: NSObject {
                     }
                 }
                 guard !values.isEmpty else { continue }
-                upsertCredential(driveType: driveType, values: values, spec: spec)
+                pending.append((driveType, values, spec))
                 pulled.insert(driveType)
                 log("[NodeSync] ✅ 拉取 \(driveType)（配置文件，\(values.count) 个字段）")
             }
         } catch {
             summary.errors.append("pull(file): \(error.localizedDescription)")
             log("[NodeSync] ⚠️ saveProfile 配置文件拉取失败: \(error.localizedDescription)", .warn)
+        }
+
+        // 3) 统一在 MainActor 浅栈落库：await 挂起后旧调用链栈帧已释放，
+        //    saveCredential / addOrReplaceToken 触发的同步重绘不再嵌套在深层链路内。
+        await MainActor.run {
+            for item in pending {
+                upsertCredential(driveType: item.driveType, values: item.values, spec: item.spec)
+            }
         }
 
         summary.pulledDrives = Array(pulled).sorted()
