@@ -149,8 +149,8 @@ final class NodeRuntimeManager: ObservableObject {
                 // 4) 设置环境变量并启动 Node 引擎（P1-18 端口一致性）
                 launchNodeEngine()
 
-                // 5) 等待启动 ack（超时 20s）
-                let ackOK = await waitForStartupAck(timeout: 20)
+                // 5) 等待启动 ack（超时 45s，对齐 TVS 的启动等待策略；此时 ack 必为本次真实写入）
+                let ackOK = await waitForStartupAck(timeout: 45)
                 guard ackOK else {
                     failStart("Node 启动 ack 超时或失败")
                     return
@@ -196,6 +196,16 @@ final class NodeRuntimeManager: ObservableObject {
         let fm = FileManager.default
         try fm.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
         try fm.createDirectory(at: bundleDir, withIntermediateDirectories: true)
+
+        // 清除上次运行残留的握手文件（.startup.ack / .relisten.ack）。
+        // 若不清理，waitForStartupAck 会在 1ms 内读到陈旧 "ok" 而误判启动成功，
+        // 随后单次探活必然失败，导致"有时能启动、有时不能"的竞态。
+        for handshakeFile in [startupAckPath, relistenAckPath] {
+            if fm.fileExists(atPath: handshakeFile.path) {
+                try? fm.removeItem(at: handshakeFile)
+                nodeLog(.info, "🧹 清除残留握手文件: \(handshakeFile.lastPathComponent)")
+            }
+        }
 
         // 资源来源：Bundle.main 的 noderuntime 目录（由 pbxproj folder 引用打包）
         guard let srcDir = Bundle.main.resourceURL?
@@ -447,23 +457,34 @@ final class NodeRuntimeManager: ObservableObject {
         }
     }
 
-    /// HTTP 探活：优先健康端口，回退主端口（/website/api/status）
-    private func probeHealth() async -> Bool {
-        let endpoints = [
-            "http://127.0.0.1:\(healthPort)/health",
-            "http://127.0.0.1:\(activePort)/website/api/status",
-        ]
-        for endpoint in endpoints {
-            guard let url = URL(string: endpoint) else { continue }
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 5
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                    return true
+    /// HTTP 探活：优先健康端口，回退主端口（/website/api/status）。
+    /// 带重试等待服务就绪：ack 确认后服务可能仍在收尾监听，单次探测会误报失败，
+    /// 因此按 500ms 间隔最多重试 retries 次（对齐 TVS 的"轮询等待"策略）。
+    private func probeHealth(retries: Int = 12, retryDelay: TimeInterval = 0.5) async -> Bool {
+        let attemptCount = max(retries, 1)
+        for attempt in 0..<attemptCount {
+            let endpoints = [
+                "http://127.0.0.1:\(healthPort)/health",
+                "http://127.0.0.1:\(activePort)/website/api/status",
+            ]
+            for endpoint in endpoints {
+                guard let url = URL(string: endpoint) else { continue }
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 3
+                do {
+                    let (_, response) = try await URLSession.shared.data(for: request)
+                    if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                        if attempt > 0 {
+                            nodeLog(.info, "✅ 探活成功（第 \(attempt + 1) 次尝试）")
+                        }
+                        return true
+                    }
+                } catch {
+                    // 服务未就绪，进入下一次重试
                 }
-            } catch {
-                // 继续尝试下一个端点
+            }
+            if attempt < attemptCount - 1 {
+                try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
             }
         }
         return false
@@ -476,6 +497,14 @@ final class NodeRuntimeManager: ObservableObject {
         isCrashed = true
         isSystemReady = false
         statusInfo = "node-crashed"
+
+        // 崩溃后清理握手文件，防止下次启动读到本次残留的 ack 而误判成功
+        let fm = FileManager.default
+        for handshakeFile in [startupAckPath, relistenAckPath] {
+            if fm.fileExists(atPath: handshakeFile.path) {
+                try? fm.removeItem(at: handshakeFile)
+            }
+        }
         let message = "Node 常驻服务已停止（连续 \(maxHealthFailures) 次心跳失败）。请重启 App 恢复。"
         lastError = message
         nodeLog(.error, "❌ \(message)")
