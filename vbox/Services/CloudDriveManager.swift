@@ -70,6 +70,8 @@ class CloudDriveManager: ObservableObject {
         case pan139 = "139pan"
         case pan189 = "189pan"
         case xunlei = "xunlei"
+        case guangya = "guangya"
+        case woniu4k = "woniu4k"
 
         var displayName: String {
             switch self {
@@ -82,6 +84,8 @@ class CloudDriveManager: ObservableObject {
             case .pan139: return "139云盘"
             case .pan189: return "天翼云盘"
             case .xunlei: return "迅雷云盘"
+            case .guangya: return "光鸭网盘"
+            case .woniu4k: return "蜗牛网盘"
             }
         }
 
@@ -96,6 +100,8 @@ class CloudDriveManager: ObservableObject {
             case .pan139: return "Cookie / Session"
             case .pan189: return "Cookie / 扫码登录"
             case .xunlei: return "Cookie / 网页登录"
+            case .guangya: return "Token"
+            case .woniu4k: return "账号 / 密码"
             }
         }
     }
@@ -1380,6 +1386,8 @@ class CloudDriveManager: ObservableObject {
         if url.contains("yun.139.com") || url.contains("139.com") { return .pan139 }
         if url.contains("cloud.189.cn") || url.contains("189.cn") { return .pan189 }
         if url.contains("pan.xunlei.com") { return .xunlei }
+        if url.contains("guangyapan.com") { return .guangya }
+        if url.contains("woniu4k.com") || url.contains("wn4k.com") { return .woniu4k }
         return nil
     }
 
@@ -10237,6 +10245,15 @@ class CloudDriveManager: ObservableObject {
             return pgResult
         }
 
+        // ═══════════════════════════════════════════════════════════
+        // ★ 光鸭/蜗牛：Node 常驻系统托管（A1 接缝），不走原生 Token 链路
+        // 解析经 /spider/push/4/detail → /spider/push/4/play
+        // ═══════════════════════════════════════════════════════════
+        if driveType == .guangya || driveType == .woniu4k {
+            self.log("[CloudDrive] 🔄 \(driveType.displayName) 走 A1 接缝（Node 常驻系统）")
+            return try await resolveViaNodePan(shareURL: baseURL, driveType: driveType)
+        }
+
         let tokens = tokens(for: driveType)
         guard !tokens.isEmpty else {
             throw DriveError.tokenNotConfigured(driveType.displayName)
@@ -10292,6 +10309,10 @@ class CloudDriveManager: ObservableObject {
                     result = try await resolve189PanPlayURL(shareURL: baseURL, cookie: token.value)
                 case .xunlei:
                     result = try await resolveXunleiPlayURL(shareURL: baseURL, cookie: token.value)
+                case .guangya, .woniu4k:
+                    // 光鸭/蜗牛由 Node 常驻系统解析（A1 接缝），原生链路不参与；
+                    // 到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
+                    throw AuthError.notAuthorized("光鸭/蜗牛由 Node 常驻系统解析，请确认 Node 状态")
                 }
                 self.log("[CloudDrive] ✅ \(driveType.displayName) Token \"\(token.name)\" 成功")
                 return result
@@ -10308,6 +10329,29 @@ class CloudDriveManager: ObservableObject {
         let count = tokens.count
         self.log("[CloudDrive] ❌ 所有 \(count) 个 \(driveType.displayName) Token 均失败")
         throw lastError ?? DriveError.tokenNotConfigured(driveType.displayName)
+    }
+
+    // MARK: - A1 接缝：Node 常驻系统解析（光鸭/蜗牛）
+
+    /// 走 Node 常驻系统解析分享链接（P1-08/09/15）
+    /// 链路：/spider/push/4/detail（分享→文件列表）→ /spider/push/4/play（条目→播放地址）
+    private func resolveViaNodePan(shareURL: String, driveType: DriveType) async throws -> PlayResult {
+        guard NodeRuntimeManager.shared.isSystemReady else {
+            self.log("[CloudDrive] ❌ \(driveType.displayName) 需要 Node 常驻系统，但 Node 未就绪")
+            throw DriveError.tokenNotConfigured("\(driveType.displayName)（Node 未就绪，请稍后重试）")
+        }
+        let share = try await NodePanResolver.shared.resolveShare(shareURL)
+        guard let first = share.entries.first else {
+            throw DriveError.noPlayURL("\(driveType.displayName): 分享内未找到可播放视频")
+        }
+        let play = try await NodePanResolver.shared.resolvePlay(playID: first.playID)
+        let alias = driveType == .guangya ? DriveTypeAlias.guangya : DriveTypeAlias.woniu4k
+        return PlayResult(
+            url: play.url,
+            headers: play.headers,
+            driveType: alias,
+            source: "A1接缝-\(driveType.displayName)"
+        )
     }
 
     private func isLikelyAuthInvalid(_ error: Error) -> Bool {
@@ -10367,6 +10411,8 @@ enum DriveTypeAlias: String {
     case pan139 = "139云盘"
     case pan189 = "天翼云盘"
     case xunlei = "迅雷云盘"
+    case guangya = "光鸭网盘"
+    case woniu4k = "蜗牛网盘"
 }
 
 enum DriveError: LocalizedError {

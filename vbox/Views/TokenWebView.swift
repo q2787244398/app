@@ -72,6 +72,9 @@ struct TokenWebViewRepresentable: UIViewRepresentable {
             return URL(string: "https://cloud.189.cn/")!
         case .xunlei:
             return URL(string: "https://i.xunlei.com/xluser/login.html")!
+        case .guangya, .woniu4k:
+            // 光鸭/蜗牛由 Node 常驻系统托管，不走 WebView 登录；保留首页作兜底展示
+            return URL(string: "https://guangyapan.com/")!
         }
     }
 
@@ -95,6 +98,8 @@ struct TokenWebViewRepresentable: UIViewRepresentable {
             return "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
         case .xunlei:
             return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        case .guangya, .woniu4k:
+            return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
     }
 
@@ -109,6 +114,9 @@ struct TokenWebViewRepresentable: UIViewRepresentable {
         case .pan139: return ["yun.139.com", ".139.com", "caiyun.139.com"]
         case .pan189: return ["cloud.189.cn", ".189.cn", "api.189.cn"]
         case .xunlei: return ["pan.xunlei.com", ".xunlei.com", "i.xunlei.com", "login.xunlei.com", "dynamic.cloud.vip.xunlei.com"]
+        case .guangya, .woniu4k:
+            // Node 托管盘无 WebView Cookie 注入需求
+            return []
         }
     }
 
@@ -410,6 +418,9 @@ struct TokenWebViewRepresentable: UIViewRepresentable {
                 return lower.contains("userid=") || lower.contains("usernewno=") ||
                        lower.contains("xunlei_kis=") || lower.contains("gdriveid=") ||
                        lower.contains("xunlei_kisp=")
+            case .guangya, .woniu4k:
+                // Node 托管盘不走 WebView Cookie 校验
+                return false
             }
         }
     }

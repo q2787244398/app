@@ -1548,6 +1548,8 @@ struct CloudAuthCenterView: View {
     @State private var show139NativeQR = false
     @State private var show189NativeQR = false
     @State private var showXunleiNativeQR = false
+    @State private var showGuangyaQR = false
+    @State private var showWoniu4kLogin = false
     @State private var webAuthDriveType: CloudDriveManager.DriveType? = nil
     @State private var selectedDriveType: CloudDriveManager.DriveType = .ali
     @State private var driveTokenName = ""
@@ -1567,6 +1569,8 @@ struct CloudAuthCenterView: View {
                     providerAccountCard(type: .pan139, note: "139云盘（移动云盘）支持网页扫码登录回收 Cookie。")
                     providerAccountCard(type: .pan189, note: "天翼云盘支持原生扫码登录获取 Cookie，用于解析播放分享链接。")
                     providerAccountCard(type: .xunlei, note: "迅雷云盘支持网页登录获取 Cookie，用于后续迅雷云盘资源解析播放。")
+                    nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：扫码授权后自动回收 Token，解析链路走 A1 接缝。")
+                    nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。")
                     manualTokenFallbackCard
 
                     Text("播放前不会强制检测授权状态；解析失败且像授权失效时才反向标记。手动粘贴入口继续保留为高级兜底。")
@@ -1630,6 +1634,12 @@ struct CloudAuthCenterView: View {
             }
             .sheet(isPresented: $showXunleiNativeQR) {
                 NativeCloudQRLoginView(driveType: .xunlei)
+            }
+            .sheet(isPresented: $showGuangyaQR) {
+                NodeGuangyaQRLoginView()
+            }
+            .sheet(isPresented: $showWoniu4kLogin) {
+                NodeWoniu4kLoginView()
             }
             .sheet(item: $webAuthDriveType) { type in
                 CloudDriveWebAuthView(driveType: type)
@@ -1891,6 +1901,35 @@ struct CloudAuthCenterView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.04)))
     }
 
+    /// 光鸭/蜗牛（Node 托管网盘）授权卡片
+    private func nodeManagedAccountCard(type: CloudDriveManager.DriveType, note: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            accountHeader(
+                title: type.displayName,
+                subtitle: authSubtitle(for: type, fallback: "未登录"),
+                icon: iconForDriveType(type),
+                isReady: authManager.isAuthorized(type)
+            )
+            Text(note)
+                .font(.system(size: 12))
+                .foregroundColor(.gray)
+            HStack(spacing: 10) {
+                if type == .guangya {
+                    Button(action: { showGuangyaQR = true }) {
+                        authButtonLabel("扫码授权", icon: "qrcode")
+                    }
+                } else if type == .woniu4k {
+                    Button(action: { showWoniu4kLogin = true }) {
+                        authButtonLabel("账号登录", icon: "person.text.rectangle")
+                    }
+                }
+            }
+            authDetailLine(for: type, fallback: "Node 托管")
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.04)))
+    }
+
     private func authSubtitle(for type: CloudDriveManager.DriveType, fallback: String) -> String {
         if authManager.isAuthorized(type) {
             return authManager.displayName(for: type)
@@ -2020,6 +2059,8 @@ struct CloudAuthCenterView: View {
         case .pan139: return "9.square.fill"
         case .pan189: return "icloud.fill"
         case .xunlei: return "bolt.fill"
+        case .guangya: return "g.circle.fill"
+        case .woniu4k: return "s.circle.fill"
         }
     }
 }
@@ -2298,6 +2339,8 @@ struct CloudPlaybackCacheView: View {
         case .pan139: return "9.square.fill"
         case .pan189: return "icloud.fill"
         case .xunlei: return "bolt.fill"
+        case .guangya: return "g.circle.fill"
+        case .woniu4k: return "s.circle.fill"
         }
     }
 }

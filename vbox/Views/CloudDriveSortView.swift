@@ -100,6 +100,8 @@ struct CloudDriveSortPopup: View {
         case .pan139: return "tray.full"
         case .pan189: return "cloud"
         case .xunlei: return "bolt"
+        case .guangya: return "g.circle"
+        case .woniu4k: return "s.circle"
         }
     }
 }

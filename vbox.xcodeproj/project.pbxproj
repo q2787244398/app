@@ -337,6 +337,8 @@
 		NODEC0DE0105 /* NodeMobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = NODEC0DE0204 /* NodeMobile.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		NODEC0DE0106 /* noderuntime in Resources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0205 /* noderuntime */; };
 		NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0206 /* NodeCredentialSyncService.swift */; };
+		NODEC0DE0108 /* NodeLoginViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0207 /* NodeLoginViews.swift */; };
+		NODEC0DE0109 /* NodePanResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0208 /* NodePanResolver.swift */; };
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
@@ -692,6 +694,8 @@
 		NODEC0DE0204 /* NodeMobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = NodeMobile.xcframework; path = Libraries/NodeMobile/NodeMobile.xcframework; sourceTree = "<group>"; };
 		NODEC0DE0205 /* noderuntime */ = {isa = PBXFileReference; lastKnownFileType = folder; name = noderuntime; path = Resources/noderuntime; sourceTree = "<group>"; };
 		NODEC0DE0206 /* NodeCredentialSyncService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeCredentialSyncService.swift; sourceTree = "<group>"; };
+		NODEC0DE0207 /* NodeLoginViews.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeLoginViews.swift; sourceTree = "<group>"; };
+		NODEC0DE0208 /* NodePanResolver.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodePanResolver.swift; sourceTree = "<group>"; };
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
@@ -1543,6 +1547,7 @@
 				73C8EB5BB682575EC87A171A /* PythonSpiderEngine.swift */,
 				NODEC0DE0203 /* NodeRuntimeManager.swift */,
 				NODEC0DE0206 /* NodeCredentialSyncService.swift */,
+				NODEC0DE0208 /* NodePanResolver.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -1557,6 +1562,7 @@
 				4CBD4AE667D94F1CDEDFD62A /* AliPlayerRepresentable.swift */,
 				800C1C8623E553FD6DB513F8 /* LogViewerView.swift */,
 				B10010 /* SettingsViews.swift */,
+				NODEC0DE0207 /* NodeLoginViews.swift */,
 				CAFE00000000000000000003 /* RemoteSourceStatusBar.swift */,
 				C1A000000000000000000002 /* CloudDriveSortView.swift */,
 				B10022 /* PlayerSubViews.swift */,
@@ -2009,6 +2015,8 @@
 				NODEC0DE0103 /* NodeRuntimeManager.swift in Sources */,
 				NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */,
 				EB16EF7FE7BC7C2CD933D325 /* GoProxyManager.swift in Sources */,
+				NODEC0DE0108 /* NodeLoginViews.swift in Sources */,
+				NODEC0DE0109 /* NodePanResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

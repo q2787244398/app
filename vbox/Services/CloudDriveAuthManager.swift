@@ -2409,6 +2409,10 @@ final class CloudDriveAuthManager: ObservableObject {
                 try await validateCookie(url: "https://cloud.189.cn/", cookie: credential.cookie ?? "", referer: "https://cloud.189.cn/")
             case .xunlei:
                 try await validateCookie(url: "https://pan.xunlei.com/", cookie: credential.cookie ?? "", referer: "https://pan.xunlei.com/")
+            case .guangya, .woniu4k:
+                // 光鸭/蜗牛由 Node 常驻系统托管：本地校验核心字段非空即可，
+                // 真实有效性由 Node 侧解析链路（A1 接缝）运行时判定。
+                try validateNodeManagedCredential(credential, driveType: driveType)
             }
             markValid(driveType, message: "授权检测正常")
             return true
@@ -2601,6 +2605,24 @@ final class CloudDriveAuthManager: ObservableObject {
             return "CID=\(trimmed)"
         default:
             return trimmed
+        }
+    }
+
+    /// 光鸭/蜗牛（Node 托管网盘）本地核心字段校验
+    /// - guangya: extra["token"] 非空
+    /// - woniu4k: cookie 非空
+    private func validateNodeManagedCredential(_ credential: CloudDriveCredential, driveType: CloudDriveManager.DriveType) throws {
+        switch driveType {
+        case .guangya:
+            guard let token = credential.extra["token"], !token.isEmpty else {
+                throw AuthError.notAuthorized("光鸭网盘未配置 Token，请先扫码授权")
+            }
+        case .woniu4k:
+            guard let cookie = credential.cookie, !cookie.isEmpty else {
+                throw AuthError.notAuthorized("蜗牛网盘未配置 Cookie，请先账号登录")
+            }
+        default:
+            break
         }
     }
 

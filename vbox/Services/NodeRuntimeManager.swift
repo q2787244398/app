@@ -268,7 +268,7 @@ final class NodeRuntimeManager: ObservableObject {
         if let manifest,
            let manifestMD5 = manifest.md5,
            let local = try? Data(contentsOf: activeBundleURL),
-           local.md5Hex() == manifestMD5 {
+           local.md5Hex == manifestMD5 {
             print("[NodeRuntime] ✅ bundle 完整性校验通过 MD5=\(manifestMD5.prefix(8))")
             return
         }
@@ -279,8 +279,8 @@ final class NodeRuntimeManager: ObservableObject {
 
         // 回退后重建 manifest（标记来源 bundled）
         if let restored = try? Data(contentsOf: activeBundleURL) {
-            writeBundleManifest(md5: restored.md5Hex(), source: "bundled", version: nil)
-            print("[NodeRuntime] ✅ bundle 已从资源恢复 MD5=\(restored.md5Hex().prefix(8))")
+            writeBundleManifest(md5: restored.md5Hex, source: "bundled", version: nil)
+            print("[NodeRuntime] ✅ bundle 已从资源恢复 MD5=\(restored.md5Hex.prefix(8))")
         }
     }
 
@@ -342,9 +342,9 @@ final class NodeRuntimeManager: ObservableObject {
             print("[NodeRuntime] ⚠️ bundle 拉取异常（\(data.count)B），丢弃")
             return
         }
-        let md5 = data.md5Hex()
+        let md5 = data.md5Hex
         // 与本地缓存比对：一致则跳过写盘
-        if let local = try? Data(contentsOf: activeBundleURL), local.md5Hex() == md5 {
+        if let local = try? Data(contentsOf: activeBundleURL), local.md5Hex == md5 {
             print("[NodeRuntime] ✅ bundle MD5 一致，无需更新")
             return
         }
@@ -421,15 +421,22 @@ final class NodeRuntimeManager: ObservableObject {
     }
 
     private func runHealthCheck() async {
-        guard isSystemReady else { return }
+        // 崩溃后（isSystemReady=false）保持心跳探测，便于自愈：
+        // Node 实际存活但曾因网络抖动误判崩溃时，探测恢复后重新标记就绪。
+        guard isSystemReady || isCrashed else { return }
         let ok = await probeHealth()
         if ok {
             consecutiveHealthFailures = 0
-            if isCrashed {
+            if isCrashed || !isSystemReady {
                 isCrashed = false
+                isSystemReady = true
                 statusInfo = "node-ready(\(activePort))"
                 postStatus()
-                print("[NodeRuntime] ✅ Node 心跳恢复")
+                print("[NodeRuntime] ✅ Node 自愈：心跳恢复，系统重新就绪")
+            } else if statusInfo == "node-memory-warning" {
+                // 内存告警仅提示，健康恢复后还原就绪状态
+                statusInfo = "node-ready(\(activePort))"
+                postStatus()
             }
         } else {
             consecutiveHealthFailures += 1
@@ -481,7 +488,22 @@ final class NodeRuntimeManager: ObservableObject {
     // MARK: - iOS 挂起恢复（P1-14 relisten 协议）
 
     @objc private func handleAppBecameActive() {
-        guard isSystemReady, !isCrashed else { return }
+        // 崩溃后回到前台：先探活一次，Node 实际存活则立即自愈，不再等 30s 心跳周期
+        if isCrashed {
+            Task {
+                let ok = await probeHealth()
+                if ok {
+                    consecutiveHealthFailures = 0
+                    isCrashed = false
+                    isSystemReady = true
+                    statusInfo = "node-ready(\(activePort))"
+                    postStatus()
+                    print("[NodeRuntime] ✅ 前台恢复探测成功，Node 自愈")
+                }
+            }
+            return
+        }
+        guard isSystemReady else { return }
         Task { await performRelisten() }
     }
 
@@ -572,17 +594,5 @@ enum NodeRuntimeError: LocalizedError {
         case .bundleResourceMissing(let name):
             return "Node 资源缺失: \(name)"
         }
-    }
-}
-
-// MARK: - Data MD5
-
-extension Data {
-    func md5Hex() -> String {
-        var digest = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
-        _ = withUnsafeBytes { bytes in
-            CC_MD5(bytes.baseAddress, CC_LONG(count), &digest)
-        }
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

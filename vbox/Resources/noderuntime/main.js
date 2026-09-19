@@ -605,6 +605,26 @@ async function startBundle(bundlePath) {
     }
 }
 
+// ---- P1-19: 轻量健康探测服务（HEALTH_PORT，默认 58082） ----
+// 供宿主崩溃检测使用（NodeRuntimeManager.probeHealth 首选端点）。
+// 独立于 bundle 主服务（不在 __catServers 内），relisten 重监听不会触碰它；
+// 仅返回固定 200，不承载业务逻辑。
+const healthPort = parseInt(process.env.HEALTH_PORT, 10) || 58082;
+const healthServer = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        status: 'ok',
+        pid: process.pid,
+        uptime: Math.round(process.uptime() * 100) / 100,
+    }));
+});
+healthServer.on('error', (error) => {
+    console.log('[NodeBridge] health server error: ' + error.message);
+});
+healthServer.listen(healthPort, () => {
+    console.log('[NodeBridge] health server on port ' + healthPort);
+});
+
 startBundle(process.env.BUNDLE_PATH)
     .then(() => writeStartupAck('ok'))
     .catch((error) => {

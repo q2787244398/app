@@ -49,10 +49,11 @@ final class NodeCredentialSyncService: NSObject {
     // MARK: - 映射表
 
     /// 单字段映射：nodeField（bundle 侧字段）→ keychainSlot（CloudDriveCredential 落点）
-    /// slot 取值："cookie" 或 "extra:<key>"
+    /// slot 取值："cookie" 或 "extra:<key>"；dbPath 为 wexfnwconfig.json 中的存储路径段
     private struct FieldMap {
         let nodeField: String
         let keychainSlot: String
+        let dbPath: [String]
     }
 
     private struct ProviderSpec {
@@ -60,36 +61,36 @@ final class NodeCredentialSyncService: NSObject {
         let fields: [FieldMap]
     }
 
-    /// vbox driveType(rawValue) → Node provider（与 bundle c_t 完全对齐）
+    /// vbox driveType(rawValue) → Node provider（与 bundle c_t / wexfnwconfig.json 对齐）
     private static let managedProviders: [String: ProviderSpec] = [
         "one15": ProviderSpec(nodeProvider: "pan115", fields: [
-            FieldMap(nodeField: "cookie", keychainSlot: "cookie"),
+            FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["pan", "pan115", "cookie"]),
         ]),
         "pan123": ProviderSpec(nodeProvider: "pan123", fields: [
-            FieldMap(nodeField: "account", keychainSlot: "extra:account"),
-            FieldMap(nodeField: "password", keychainSlot: "extra:password"),
-            FieldMap(nodeField: "auth", keychainSlot: "extra:auth"),
+            FieldMap(nodeField: "account", keychainSlot: "extra:account", dbPath: ["pan", "pan123", "account"]),
+            FieldMap(nodeField: "password", keychainSlot: "extra:password", dbPath: ["pan", "pan123", "password"]),
+            FieldMap(nodeField: "auth", keychainSlot: "extra:auth", dbPath: ["pan", "pan123", "auth"]),
         ]),
         "pan139": ProviderSpec(nodeProvider: "new139", fields: [
-            FieldMap(nodeField: "session", keychainSlot: "extra:session"),
-            FieldMap(nodeField: "device", keychainSlot: "extra:device"),
+            FieldMap(nodeField: "session", keychainSlot: "extra:session", dbPath: ["pan", "new139", "session"]),
+            FieldMap(nodeField: "device", keychainSlot: "extra:device", dbPath: ["pan", "new139", "device"]),
         ]),
         "pan189": ProviderSpec(nodeProvider: "tyi", fields: [
-            FieldMap(nodeField: "account", keychainSlot: "extra:account"),
-            FieldMap(nodeField: "password", keychainSlot: "extra:password"),
-            FieldMap(nodeField: "cookie", keychainSlot: "cookie"),
-            FieldMap(nodeField: "refreshCookie", keychainSlot: "extra:refreshCookie"),
+            FieldMap(nodeField: "account", keychainSlot: "extra:account", dbPath: ["pan", "pan189", "account"]),
+            FieldMap(nodeField: "password", keychainSlot: "extra:password", dbPath: ["pan", "pan189", "password"]),
+            FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["pan", "pan189", "cookie"]),
+            FieldMap(nodeField: "refreshCookie", keychainSlot: "extra:refreshCookie", dbPath: ["pan", "pan189", "refreshCookie"]),
         ]),
         "xunlei": ProviderSpec(nodeProvider: "thunder", fields: [
-            FieldMap(nodeField: "config", keychainSlot: "extra:config"),
+            FieldMap(nodeField: "config", keychainSlot: "extra:config", dbPath: ["pan", "thunder", "config"]),
         ]),
         "guangya": ProviderSpec(nodeProvider: "guangya", fields: [
-            FieldMap(nodeField: "token", keychainSlot: "extra:token"),
+            FieldMap(nodeField: "token", keychainSlot: "extra:token", dbPath: ["pan", "guangya", "token"]),
         ]),
         "woniu4k": ProviderSpec(nodeProvider: "woniu4k", fields: [
-            FieldMap(nodeField: "account", keychainSlot: "extra:account"),
-            FieldMap(nodeField: "password", keychainSlot: "extra:password"),
-            FieldMap(nodeField: "cookie", keychainSlot: "cookie"),
+            FieldMap(nodeField: "account", keychainSlot: "extra:account", dbPath: ["siteCookie", "woniu4k", "account"]),
+            FieldMap(nodeField: "password", keychainSlot: "extra:password", dbPath: ["siteCookie", "woniu4k", "password"]),
+            FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["siteCookie", "woniu4k", "cookie"]),
         ]),
     ]
 
@@ -200,36 +201,100 @@ final class NodeCredentialSyncService: NSObject {
 
     private func performPull() async -> NodeCredentialSyncSummary {
         var summary = NodeCredentialSyncSummary()
+        var pulled = Set<String>()
+
+        // 1) HTTP：GET /website/api/credentials（bundle 权威读接口，覆盖 4 盘）
         do {
             let json = try await requestJSON("GET", "/website/api/credentials")
-            guard let data = json["data"] as? [String: Any] else {
-                summary.errors.append("pull: credentials 响应缺少 data")
-                return summary
+            if let data = json["data"] as? [String: Any] {
+                for (bundleKey, driveType) in Self.pullable {
+                    guard let raw = data[bundleKey] as? [String: Any],
+                          let spec = Self.managedProviders[driveType] else { continue }
+                    var values: [String: String] = [:]
+                    for field in spec.fields {
+                        if let v = raw[field.nodeField] as? String, !v.isEmpty {
+                            values[field.nodeField] = v
+                        }
+                    }
+                    guard !values.isEmpty else { continue }
+                    upsertCredential(driveType: driveType, values: values, spec: spec)
+                    pulled.insert(driveType)
+                    log("[NodeSync] ✅ 拉取 \(driveType)（HTTP，\(values.count) 个字段）")
+                }
             }
-            for (bundleKey, driveType) in Self.pullable {
-                guard let raw = data[bundleKey] as? [String: Any],
-                      let spec = Self.managedProviders[driveType] else { continue }
+        } catch {
+            summary.errors.append("pull(HTTP): \(error.localizedDescription)")
+            log("[NodeSync] ⚠️ saveProfile HTTP 拉取失败: \(error.localizedDescription)", .warn)
+        }
 
-                // 提取非空字段
+        // 2) 配置文件：直接读 wexfnwconfig.json（覆盖全部 7 盘，含 thunder/guangya/woniu4k）
+        do {
+            let fileValues = try readConfigFileValues()
+            for (driveType, spec) in Self.managedProviders {
                 var values: [String: String] = [:]
                 for field in spec.fields {
-                    if let v = raw[field.nodeField] as? String, !v.isEmpty {
+                    if let v = fileValues[driveType]?[field.nodeField], !v.isEmpty {
                         values[field.nodeField] = v
                     }
                 }
                 guard !values.isEmpty else { continue }
-
                 upsertCredential(driveType: driveType, values: values, spec: spec)
-                summary.pulledDrives.append(driveType)
-                log("[NodeSync] ✅ 拉取 \(driveType)（\(values.count) 个字段）")
+                pulled.insert(driveType)
+                log("[NodeSync] ✅ 拉取 \(driveType)（配置文件，\(values.count) 个字段）")
             }
         } catch {
-            summary.errors.append("pull: \(error.localizedDescription)")
-            log("[NodeSync] ❌ saveProfile 失败: \(error.localizedDescription)", .error)
+            summary.errors.append("pull(file): \(error.localizedDescription)")
+            log("[NodeSync] ⚠️ saveProfile 配置文件拉取失败: \(error.localizedDescription)", .warn)
         }
+
+        summary.pulledDrives = Array(pulled).sorted()
         summary.duration = Date().timeIntervalSince(summary.startedAt)
         log("[NodeSync] 📥 saveProfile 完成: 拉取 \(summary.pulledDrives.count) 个网盘, 错误 \(summary.errors.count)")
         return summary
+    }
+
+    /// 读取 wexfnwconfig.json，按 dbPath 提取 driveType → [nodeField: value]
+    private func readConfigFileValues() throws -> [String: [String: String]] {
+        let fileURL = NodeRuntimeManager.shared.runtimeDir.appendingPathComponent("wexfnwconfig.json")
+        let data = try Data(contentsOf: fileURL)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NodeCredentialSyncError.nodeRejected("wexfnwconfig.json 格式异常")
+        }
+        var result: [String: [String: String]] = [:]
+        for (driveType, spec) in Self.managedProviders {
+            var values: [String: String] = [:]
+            for field in spec.fields {
+                guard let raw = valueAtPath(root, field.dbPath) else { continue }
+                let text: String
+                if let s = raw as? String {
+                    text = s
+                } else if let d = raw as? Double, d == d.rounded() {
+                    text = String(Int(d))
+                } else {
+                    text = String(describing: raw)
+                }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    values[field.nodeField] = trimmed
+                }
+            }
+            if !values.isEmpty {
+                result[driveType] = values
+            }
+        }
+        return result
+    }
+
+    /// 按路径段在嵌套字典中取值（["pan","pan115","cookie"] → root["pan"]["pan115"]["cookie"]）
+    private func valueAtPath(_ root: [String: Any], _ path: [String]) -> Any? {
+        var current: Any = root
+        for key in path {
+            guard let dict = current as? [String: Any], let next = dict[key] else {
+                return nil
+            }
+            current = next
+        }
+        return current
     }
 
     /// 把 Node 侧字段合并写入 Keychain（统一凭据模型，不触碰百度等旧 token 结构）
