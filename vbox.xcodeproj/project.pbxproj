@@ -7,13 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		NODEC0DE0101 /* NodeRunner.h in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0201 /* NodeRunner.h */; };
-		NODEC0DE0102 /* NodeRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0202 /* NodeRunner.mm */; };
-		NODEC0DE0103 /* NodeRuntimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0203 /* NodeRuntimeManager.swift */; };
-		NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0206 /* NodeCredentialSyncService.swift */; };
-		NODEC0DE0104 /* NodeMobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = NODEC0DE0204 /* NodeMobile.xcframework */; };
-		NODEC0DE0105 /* NodeMobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = NODEC0DE0204 /* NodeMobile.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		NODEC0DE0106 /* noderuntime in Resources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0205 /* noderuntime */; };
 		004C1F840658F7D4F4666871 /* AppLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9F73BC83E18E7C07A730C2 /* AppLogStore.swift */; };
 		006F22E2689A48FF923F1D13 /* AliyunPgConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50C8D2B04A447F8B0FB044B /* AliyunPgConfig.swift */; };
 		01399D0637B52CDB9ADC35E1 /* RemoteWelfareHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A80AEF200D3D6044272475 /* RemoteWelfareHomeView.swift */; };
@@ -316,6 +309,7 @@
 		E5F6789ABCDEF01234567890 /* KanliaoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6789ABCDEF0123456789012 /* KanliaoService.swift */; };
 		E6282092E81C07FE0600BCB2 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FD98D769479C21FCBF68B09 /* GoProxyManager.swift */; };
 		E6D2299C192E4D54B28B877A /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85F7AFA442268244B7B8E163 /* GoProxyManager.swift */; };
+		EB16EF7FE7BC7C2CD933D325 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4282E6D21D3A701CA4732AC9 /* GoProxyManager.swift */; };
 		EB43DD29E9F5BC7D9B136A4B /* AliyunMediaDownloader.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B73C6245614D743A2D10D55A /* AliyunMediaDownloader.framework */; settings = {ATTRIBUTES = (Required, ); }; };
 		ED466A8C3381025D33D7B279 /* libc++.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AB4AB6020CDCCB8ACDFA310B /* libc++.tbd */; };
 		EE85FEE2D9F84D5CB8FA5188 /* FuliPlatformMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7BD5941C23943FA946FBF55 /* FuliPlatformMainView.swift */; };
@@ -336,6 +330,13 @@
 		FDF9E296D50E49EEE361148F /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75606D832D72AFF86111D0C /* GoProxyManager.swift */; };
 		FE31F3FFC9094771B7E85EFB /* WelfareHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D37F86000EC43D4A73E5128 /* WelfareHomeView.swift */; };
 		FF6CE5D8D4FBB2F5EF20373B /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E55EC68C5EAA29669C3763 /* GoProxyManager.swift */; };
+		NODEC0DE0101 /* NodeRunner.h in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0201 /* NodeRunner.h */; };
+		NODEC0DE0102 /* NodeRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0202 /* NodeRunner.mm */; };
+		NODEC0DE0103 /* NodeRuntimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0203 /* NodeRuntimeManager.swift */; };
+		NODEC0DE0104 /* NodeMobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = NODEC0DE0204 /* NodeMobile.xcframework */; };
+		NODEC0DE0105 /* NodeMobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = NODEC0DE0204 /* NodeMobile.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		NODEC0DE0106 /* noderuntime in Resources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0205 /* noderuntime */; };
+		NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0206 /* NodeCredentialSyncService.swift */; };
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
@@ -390,12 +391,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		NODEC0DE0201 /* NodeRunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NodeRunner.h; sourceTree = "<group>"; };
-		NODEC0DE0202 /* NodeRunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = NodeRunner.mm; sourceTree = "<group>"; };
-		NODEC0DE0203 /* NodeRuntimeManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeRuntimeManager.swift; sourceTree = "<group>"; };
-		NODEC0DE0206 /* NodeCredentialSyncService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeCredentialSyncService.swift; sourceTree = "<group>"; };
-		NODEC0DE0204 /* NodeMobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = NodeMobile.xcframework; path = Libraries/NodeMobile/NodeMobile.xcframework; sourceTree = "<group>"; };
-		NODEC0DE0205 /* noderuntime */ = {isa = PBXFileReference; lastKnownFileType = folder; name = noderuntime; path = Resources/noderuntime; sourceTree = "<group>"; };
 		00AC92B4E710C182A5880903 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		01882BD0F65A4C05B6176223 /* ExtscreenAPIClient.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ExtscreenAPIClient.swift; sourceTree = "<group>"; };
 		024DA0335408EA5B886523D6 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
@@ -446,6 +441,7 @@
 		424F3A39C4CD29EEB521F03F /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		424FDF0E29EDDCE590D85773 /* PlatformAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformAsyncImage.swift; sourceTree = "<group>"; };
 		427F365D9F00BBFE46454EC5 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
+		4282E6D21D3A701CA4732AC9 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		45410F150AD33568D996B571 /* hogweed.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = hogweed.xcframework; path = vbox/Libraries/MPV/MPVKitDependencies/hogweed.xcframework; sourceTree = SOURCE_ROOT; };
 		478C9E5D3EEDB8ED50184C3F /* FuliCategoryNavigatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuliCategoryNavigatorView.swift; sourceTree = "<group>"; };
 		4959B121CB3DFFFB86D6BEFC /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
@@ -690,6 +686,12 @@
 		FC18A246CE82EAF037E92E10 /* WelfarePlatformRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelfarePlatformRouter.swift; sourceTree = "<group>"; };
 		FF3BA937C91F737D6D98478F /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		FF4A2F51F4D48142714B5109 /* WelfarePlatformConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelfarePlatformConfig.swift; sourceTree = "<group>"; };
+		NODEC0DE0201 /* NodeRunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NodeRunner.h; sourceTree = "<group>"; };
+		NODEC0DE0202 /* NodeRunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = NodeRunner.mm; sourceTree = "<group>"; };
+		NODEC0DE0203 /* NodeRuntimeManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeRuntimeManager.swift; sourceTree = "<group>"; };
+		NODEC0DE0204 /* NodeMobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = NodeMobile.xcframework; path = Libraries/NodeMobile/NodeMobile.xcframework; sourceTree = "<group>"; };
+		NODEC0DE0205 /* noderuntime */ = {isa = PBXFileReference; lastKnownFileType = folder; name = noderuntime; path = Resources/noderuntime; sourceTree = "<group>"; };
+		NODEC0DE0206 /* NodeCredentialSyncService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeCredentialSyncService.swift; sourceTree = "<group>"; };
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
@@ -807,6 +809,15 @@
 			isa = PBXGroup;
 			children = (
 				16BE7C95A84661854C710A2F /* GoProxyManager.swift */,
+			);
+			name = Bridge;
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		17370365010B72E29DFDB4CB /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				4282E6D21D3A701CA4732AC9 /* GoProxyManager.swift */,
 			);
 			name = Bridge;
 			path = Bridge;
@@ -1112,6 +1123,7 @@
 				56E5CFB91EEDFEF709A6C9B7 /* Bridge */,
 				F255F99B2D0DBAFF32EAC2C0 /* Bridge */,
 				437EDCDB5756D18A8AFAA8CA /* Bridge */,
+				17370365010B72E29DFDB4CB /* Bridge */,
 			);
 			name = vbox;
 			sourceTree = "<group>";
@@ -1626,16 +1638,6 @@
 			path = Libraries;
 			sourceTree = "<group>";
 		};
-		NODEC0DE0301 /* NodeMobile */ = {
-			isa = PBXGroup;
-			children = (
-				NODEC0DE0201 /* NodeRunner.h */,
-				NODEC0DE0202 /* NodeRunner.mm */,
-			);
-			name = NodeMobile;
-			path = NodeMobile;
-			sourceTree = "<group>";
-		};
 		G10999 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -1683,6 +1685,16 @@
 				B100104 /* VTPiPManager.swift */,
 			);
 			path = PlayerCore;
+			sourceTree = "<group>";
+		};
+		NODEC0DE0301 /* NodeMobile */ = {
+			isa = PBXGroup;
+			children = (
+				NODEC0DE0201 /* NodeRunner.h */,
+				NODEC0DE0202 /* NodeRunner.mm */,
+			);
+			name = NodeMobile;
+			path = NodeMobile;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1996,6 +2008,7 @@
 				NODEC0DE0102 /* NodeRunner.mm in Sources */,
 				NODEC0DE0103 /* NodeRuntimeManager.swift in Sources */,
 				NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */,
+				EB16EF7FE7BC7C2CD933D325 /* GoProxyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
