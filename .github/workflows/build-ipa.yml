@@ -9,6 +9,9 @@ on:
         description: 'MobileVLCKit 备用下载地址（videolan.org 不可达时使用，可填 https 镜像或仓库内 file:// 路径）'
         required: false
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
@@ -468,9 +471,10 @@ jobs:
             echo "📦 Pods 缓存未命中，执行完整 repo-update"
           fi
 
-          # MobileVLCKit 备用源解析（download.videolan.org 在 CI 常不可达）：
+          # MobileVLCKit 下载源解析（download.videolan.org 在 CI 常不可达）：
           # 1) workflow_dispatch 输入 / secrets.MOBILE_VLC_KIT_URL（env 已注入）
           # 2) 仓库内离线 tarball（Libraries/MobileVLCKit/MobileVLCKit-*.tar.xz）
+          # 3) 默认官方构建产物站 artifacts.videolan.org（3.7.3 稳定版，已实测可达）
           if [ -z "$MOBILE_VLC_KIT_URL" ]; then
             VLC_LOCAL_TARBALL=$(ls Libraries/MobileVLCKit/MobileVLCKit-*.tar.xz 2>/dev/null | head -1 || true)
             if [ -n "$VLC_LOCAL_TARBALL" ]; then
@@ -478,17 +482,29 @@ jobs:
               echo "📦 使用仓库内离线 MobileVLCKit: $VLC_LOCAL_TARBALL"
             fi
           fi
-          if [ -n "${MOBILE_VLC_KIT_URL:-}" ]; then
-            echo "📦 MobileVLCKit 使用备用源: ${MOBILE_VLC_KIT_URL}"
-          else
-            echo "📦 MobileVLCKit 使用官方源 download.videolan.org"
+          if [ -z "${MOBILE_VLC_KIT_URL:-}" ]; then
+            export MOBILE_VLC_KIT_URL="https://artifacts.videolan.org/VLCKit/MobileVLCKit/MobileVLCKit-3.7.3-319ed2c0-79128878.tar.xz"
+            echo "📦 MobileVLCKit 使用官方构建产物站（artifacts.videolan.org，3.7.3 稳定版）"
           fi
+          echo "📦 MobileVLCKit 下载源: ${MOBILE_VLC_KIT_URL}"
 
           # MobileVLCKit 的下载服务器 download.videolan.org 经常超时，需要重试
           for attempt in 1 2 3 4 5; do
             echo "📦 第 ${attempt}/5 次尝试 pod install ${USE_REPO_UPDATE}"
             if pod install $USE_REPO_UPDATE; then
               echo "✅ CocoaPods 安装成功"
+              # 提交 Podfile.lock：锁定依赖解析结果，稳定 CocoaPods 缓存 key，
+              # 实现"首次下载后缓存、下次直接命中复用"（不再重复全量下载）
+              if [ -f Podfile.lock ]; then
+                git add Podfile.lock
+                if ! git diff --cached --quiet; then
+                  git -c user.name="vbox-ci" -c user.email="vbox-ci@users.noreply.github.com" \
+                    commit -m "chore(deps): 更新 Podfile.lock（CI 自动提交，稳定缓存 key）"
+                  git push origin HEAD:main || echo "⚠️ Podfile.lock 推送失败（忽略，不影响本次构建）"
+                else
+                  echo "📦 Podfile.lock 无变化，跳过提交"
+                fi
+              fi
               exit 0
             fi
             echo "⚠️ pod install 失败，清理后重试..."
