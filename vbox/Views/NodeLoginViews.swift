@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WebKit
 
 // MARK: - Node 登录 API 客户端
 //
@@ -633,6 +634,909 @@ struct NodeWoniu4kLoginView: View {
             statusText = "登录失败"
             // 验证码可能失效，自动刷新
             Task { await fetchVerify() }
+        }
+    }
+}
+
+// MARK: - 通用 Node 扫码登录（115 / 189）
+//
+// 复用光鸭扫码链路：POST /website/api/login/start {provider} -> {taskId, qrImage}
+//                POST /website/api/login/poll  {provider, taskId} -> {status}
+// provider 由调用方传入（"pan115" / "pan189"），登录成功统一 saveProfile 拉回 Keychain。
+
+struct NodeScanLoginRootView: View {
+    @Environment(\.dismiss) private var dismiss
+    let provider: String
+    let title: String
+    let tip: String
+
+    var body: some View {
+        NavigationView {
+            NodeScanQRLoginView(provider: provider, title: title, tip: tip)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("关闭") { dismiss() }
+                            .foregroundColor(Color(hex: "E11D48"))
+                    }
+                }
+        }
+    }
+}
+
+struct NodeScanQRLoginView: View {
+    @Environment(\.dismiss) private var dismiss
+    let provider: String
+    let title: String
+    let tip: String
+
+    @State private var qrImage: UIImage? = nil
+    @State private var statusText = "准备生成二维码"
+    @State private var errorText = ""
+    @State private var isGenerating = false
+    @State private var isPolling = false
+    @State private var taskId: String? = nil
+    @State private var timer: Timer? = nil
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                Text(title)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let qrImage {
+                    Image(uiImage: qrImage)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFit()
+                        .frame(width: 240, height: 240)
+                        .padding(10)
+                        .background(Color.white)
+                        .cornerRadius(16)
+                        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+                } else {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.gray.opacity(0.08))
+                        .frame(width: 260, height: 260)
+                        .overlay(
+                            ProgressView()
+                                .scaleEffect(1.4)
+                        )
+                }
+
+                statusCard
+                tipCard
+
+                Button(action: {
+                    Task { await regenerate() }
+                }) {
+                    Text(isPolling ? "重新生成二维码" : "生成二维码")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(hex: "E11D48"))
+                        .cornerRadius(12)
+                }
+                .disabled(isGenerating)
+            }
+            .padding(16)
+        }
+        .background(Color(uiColor: .systemBackground))
+        .onAppear {
+            Task { await regenerate() }
+        }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+            cancelTask()
+        }
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(isPolling ? Color.orange : (errorText.isEmpty ? Color.green : Color.red))
+                .frame(width: 8, height: 8)
+            Text(statusText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.gray.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    private var tipCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(tip, systemImage: "lightbulb.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.gray)
+            if !errorText.isEmpty {
+                Text(errorText)
+                    .font(.system(size: 12))
+                    .foregroundColor(.red)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.orange.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    private func regenerate() async {
+        timer?.invalidate()
+        timer = nil
+        guard !isGenerating else { return }
+        isGenerating = true
+        errorText = ""
+        statusText = "正在生成二维码..."
+        defer { isGenerating = false }
+        do {
+            let result = try await NodeLoginAPIClient.request("POST", "/website/api/login/start", body: ["provider": provider])
+            let newTaskId = result["taskId"] as? String ?? ""
+            taskId = newTaskId
+            if let qrSrc = result["qrImage"] as? String, let img = NodeLoginAPIClient.image(fromDataURL: qrSrc) {
+                qrImage = img
+                statusText = result["msg"] as? String ?? "请扫码确认"
+                startPolling(taskId: newTaskId)
+            } else {
+                errorText = "二维码生成失败：缺少图片数据"
+                statusText = "二维码生成失败"
+            }
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "生成失败"
+        }
+    }
+
+    private func startPolling(taskId: String) {
+        guard taskId.isEmpty == false else { return }
+        isPolling = true
+        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
+            Task { await poll(taskId: taskId) }
+        }
+    }
+
+    private func poll(taskId: String) async {
+        do {
+            let result = try await NodeLoginAPIClient.request("POST", "/website/api/login/poll", body: ["provider": provider, "taskId": taskId])
+            let status = result["status"] as? String ?? "waiting"
+            let msg = result["msg"] as? String ?? ""
+            switch status {
+            case "success":
+                statusText = msg.isEmpty ? "登录成功" : msg
+                timer?.invalidate()
+                timer = nil
+                isPolling = false
+                await finishSuccess()
+            case "expired", "error":
+                statusText = msg.isEmpty ? "登录已过期或失败" : msg
+                timer?.invalidate()
+                timer = nil
+                isPolling = false
+            default:
+                statusText = msg.isEmpty ? "等待扫码确认..." : msg
+            }
+        } catch {
+            statusText = "轮询中... (\(error.localizedDescription))"
+        }
+    }
+
+    /// 登录成功：把 Node 侧凭据拉回 Keychain
+    private func finishSuccess() async {
+        _ = await NodeCredentialSyncService.shared.saveProfile()
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        dismiss()
+    }
+
+    private func cancelTask() {
+        guard let taskId, !taskId.isEmpty else { return }
+        Task {
+            try? await NodeLoginAPIClient.request("POST", "/website/api/login/cancel", body: ["taskId": taskId])
+        }
+    }
+}
+
+// MARK: - 123 云盘账号密码登录（Node 托管）
+//
+// 对齐 bundle renderPan123 / savePan123：
+//   PUT /website/api/pan123/account {account, password}
+
+struct NodePan123LoginView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var account = ""
+    @State private var password = ""
+    @State private var statusText = "输入 123 网盘账号密码登录"
+    @State private var errorText = ""
+    @State private var isSubmitting = false
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Text("123 网盘账号登录")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("123 账号", text: $account)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .font(.system(size: 14))
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+
+                        SecureField("123 密码", text: $password)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .font(.system(size: 14))
+                    }
+                    .padding(14)
+                    .background(Color.gray.opacity(0.04))
+                    .cornerRadius(12)
+
+                    statusCard
+
+                    Button(action: {
+                        Task { await submit() }
+                    }) {
+                        Text(isSubmitting ? "登录中..." : "登录并保存")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(canSubmit ? Color(hex: "E11D48") : Color.gray)
+                            .cornerRadius(12)
+                    }
+                    .disabled(!canSubmit || isSubmitting)
+
+                    Text("与 TVS 配置中心的「123 账号 + 密码」登录一致，登录成功后自动同步到本机 Keychain。")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(16)
+            }
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("123 网盘授权")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                        .foregroundColor(Color(hex: "E11D48"))
+                }
+            }
+        }
+    }
+
+    private var canSubmit: Bool {
+        !account.isEmpty && !password.isEmpty
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(errorText.isEmpty ? Color.green : Color.red)
+                .frame(width: 8, height: 8)
+            Text(errorText.isEmpty ? statusText : errorText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.gray.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    private func submit() async {
+        isSubmitting = true
+        errorText = ""
+        statusText = "正在登录..."
+        defer { isSubmitting = false }
+        do {
+            _ = try await NodeLoginAPIClient.request(
+                "PUT",
+                "/website/api/pan123/account",
+                body: ["account": account.trimmingCharacters(in: .whitespacesAndNewlines),
+                       "password": password]
+            )
+            statusText = "登录成功"
+            _ = await NodeCredentialSyncService.shared.saveProfile()
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "登录失败"
+        }
+    }
+}
+
+// MARK: - 139 移动云盘手机号验证码登录（Node 托管）
+//
+// 对齐 bundle renderNew139 / sendNew139Sms / loginNew139：
+//   POST /website/api/new139/sms/send {phone} -> {msg, loginHeaders, captchaUrl?}
+//   POST /website/api/new139/login   {phone, code, headers}
+// 如触发滑块验证，内嵌 captchaUrl 页面完成后等待短信验证码。
+
+struct NodePan139SMSLoginView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var phone = ""
+    @State private var code = ""
+    @State private var loginHeaders: [String: Any] = [:]
+    @State private var captchaUrl: String? = nil
+    @State private var statusText = "输入移动手机号后获取验证码"
+    @State private var errorText = ""
+    @State private var isSending = false
+    @State private var isLoggingIn = false
+    @State private var countdown = 0
+    @State private var countdownTimer: Timer? = nil
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Text("139 移动云盘使用手机号验证码登录；如触发滑块验证，请先在下方面板完成滑块，再等待短信。")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            TextField("移动手机号", text: $phone)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .font(.system(size: 14))
+                                .keyboardType(.phonePad)
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+
+                            Button(action: {
+                                Task { await sendSms() }
+                            }) {
+                                Text(countdown > 0 ? "\(countdown)s" : "获取验证码")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(countdown > 0 ? .gray : Color(hex: "E11D48"))
+                                    .frame(width: 90, height: 34)
+                                    .background(Color.gray.opacity(0.08))
+                                    .cornerRadius(8)
+                            }
+                            .disabled(isSending || countdown > 0)
+                        }
+
+                        TextField("短信验证码", text: $code)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .font(.system(size: 14))
+                            .keyboardType(.numberPad)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                    .padding(14)
+                    .background(Color.gray.opacity(0.04))
+                    .cornerRadius(12)
+
+                    if let captchaUrl, !captchaUrl.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("滑块验证（完成后请等待短信）")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.orange)
+                            NodeCaptchaWebView(urlString: captchaUrl)
+                                .frame(height: 300)
+                                .cornerRadius(10)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.orange.opacity(0.4), lineWidth: 1)
+                                )
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    statusCard
+
+                    Button(action: {
+                        Task { await loginSms() }
+                    }) {
+                        Text(isLoggingIn ? "登录中..." : "验证码登录")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(canLogin ? Color(hex: "E11D48") : Color.gray)
+                            .cornerRadius(12)
+                    }
+                    .disabled(!canLogin || isLoggingIn)
+
+                    Text("与 TVS 配置中心的「139 手机号 + 短信验证码」登录一致。")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(16)
+            }
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("139 移动云盘授权")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                        .foregroundColor(Color(hex: "E11D48"))
+                }
+            }
+        }
+        .onDisappear {
+            countdownTimer?.invalidate()
+        }
+    }
+
+    private var canLogin: Bool {
+        !phone.isEmpty && !code.isEmpty
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(errorText.isEmpty ? Color.green : Color.red)
+                .frame(width: 8, height: 8)
+            Text(errorText.isEmpty ? statusText : errorText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.gray.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    private func sendSms() async {
+        let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorText = "请输入移动手机号"
+            return
+        }
+        errorText = ""
+        isSending = true
+        statusText = "正在发送验证码..."
+        defer { isSending = false }
+        do {
+            let result = try await NodeLoginAPIClient.request(
+                "POST",
+                "/website/api/new139/sms/send",
+                body: ["phone": trimmed]
+            )
+            loginHeaders = result["loginHeaders"] as? [String: Any] ?? [:]
+            captchaUrl = result["captchaUrl"] as? String
+            statusText = result["msg"] as? String ?? "验证码已发送"
+            startCountdown()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "发送失败"
+        }
+    }
+
+    private func loginSms() async {
+        isLoggingIn = true
+        errorText = ""
+        statusText = "正在登录..."
+        defer { isLoggingIn = false }
+        do {
+            _ = try await NodeLoginAPIClient.request(
+                "POST",
+                "/website/api/new139/login",
+                body: [
+                    "phone": phone.trimmingCharacters(in: .whitespacesAndNewlines),
+                    "code": code.trimmingCharacters(in: .whitespacesAndNewlines),
+                    "headers": loginHeaders
+                ]
+            )
+            statusText = "登录成功"
+            _ = await NodeCredentialSyncService.shared.saveProfile()
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "登录失败"
+        }
+    }
+
+    private func startCountdown() {
+        countdownTimer?.invalidate()
+        countdown = 60
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+            if countdown > 1 {
+                countdown -= 1
+            } else {
+                countdown = 0
+                timer.invalidate()
+                countdownTimer = nil
+            }
+        }
+    }
+}
+
+// MARK: - 滑块验证码内嵌页（139 移动云盘）
+
+struct NodeCaptchaWebView: UIViewRepresentable {
+    let urlString: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.bounces = false
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        guard let url = URL(string: urlString) else { return }
+        uiView.load(URLRequest(url: url))
+    }
+}
+
+// MARK: - 189 天翼网盘登录入口（扫码 / 账号密码 双模式）
+//
+// 对齐 bundle renderPan189：
+//   - 扫码: POST /website/api/login/start {provider:"pan189"}
+//   - 账号: PUT /website/api/pan189/account {account, password}，若返回 sms:true
+//           再 POST /website/api/pan189/sms/login {code}
+
+struct NodePan189LoginRootView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var mode = 0 // 0=扫码 1=账号密码
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                Picker("登录方式", selection: $mode) {
+                    Text("扫码登录").tag(0)
+                    Text("账号密码").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+
+                if mode == 0 {
+                    NodeScanQRLoginView(
+                        provider: "pan189",
+                        title: "天翼网盘扫码授权",
+                        tip: "使用天翼网盘 App 或浏览器扫码，确认后自动回收 Cookie。"
+                    )
+                } else {
+                    NodePan189AccountLoginView()
+                }
+            }
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("天翼网盘授权")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                        .foregroundColor(Color(hex: "E11D48"))
+                }
+            }
+        }
+    }
+}
+
+struct NodePan189AccountLoginView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var account = ""
+    @State private var password = ""
+    @State private var smsCode = ""
+    @State private var needSms = false
+    @State private var statusText = "输入天翼账号密码登录"
+    @State private var errorText = ""
+    @State private var isSubmitting = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("使用天翼网盘账号密码登录；若账号开启二次校验，Node 会下发短信验证码。")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("天翼账号", text: $account)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(size: 14))
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+
+                    SecureField("天翼密码", text: $password)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(size: 14))
+
+                    if needSms {
+                        TextField("短信验证码（非必填）", text: $smsCode)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .font(.system(size: 14))
+                            .keyboardType(.numberPad)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                }
+                .padding(14)
+                .background(Color.gray.opacity(0.04))
+                .cornerRadius(12)
+
+                statusCard
+
+                Button(action: {
+                    Task { await submit() }
+                }) {
+                    Text(isSubmitting ? "登录中..." : (needSms ? "验证短信并登录" : "登录并保存"))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(canSubmit ? Color(hex: "E11D48") : Color.gray)
+                        .cornerRadius(12)
+                }
+                .disabled(!canSubmit || isSubmitting)
+
+                Text("与 TVS 配置中心的「天翼账号 + 密码（可选短信）」登录一致。")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(16)
+        }
+        .background(Color(uiColor: .systemBackground))
+    }
+
+    private var canSubmit: Bool {
+        !account.isEmpty && !password.isEmpty && (!needSms || !smsCode.isEmpty)
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(errorText.isEmpty ? Color.green : Color.red)
+                .frame(width: 8, height: 8)
+            Text(errorText.isEmpty ? statusText : errorText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.gray.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    private func submit() async {
+        isSubmitting = true
+        errorText = ""
+        defer { isSubmitting = false }
+        if needSms {
+            statusText = "正在验证短信..."
+            do {
+                _ = try await NodeLoginAPIClient.request(
+                    "POST",
+                    "/website/api/pan189/sms/login",
+                    body: ["code": smsCode.trimmingCharacters(in: .whitespacesAndNewlines)]
+                )
+                statusText = "登录成功"
+                _ = await NodeCredentialSyncService.shared.saveProfile()
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                dismiss()
+            } catch {
+                errorText = error.localizedDescription
+                statusText = "登录失败"
+            }
+            return
+        }
+
+        statusText = "正在登录..."
+        do {
+            let result = try await NodeLoginAPIClient.request(
+                "PUT",
+                "/website/api/pan189/account",
+                body: ["account": account.trimmingCharacters(in: .whitespacesAndNewlines),
+                       "password": password]
+            )
+            if let sms = result["sms"] as? Bool, sms {
+                needSms = true
+                statusText = result["msg"] as? String ?? "请输入短信验证码"
+                return
+            }
+            statusText = "登录成功"
+            _ = await NodeCredentialSyncService.shared.saveProfile()
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "登录失败"
+        }
+    }
+}
+
+// MARK: - 迅雷云盘验证码登录（Node 托管）
+//
+// 对齐 bundle renderThunder / sendThunderSms / loginThunderSms：
+//   POST /website/api/thunder/sms/send {mobile}
+//   POST /website/api/thunder/sms/login {code}
+
+struct NodeXunleiSMSLoginView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var mobile = ""
+    @State private var code = ""
+    @State private var statusText = "输入手机号后获取验证码"
+    @State private var errorText = ""
+    @State private var isSending = false
+    @State private var isLoggingIn = false
+    @State private var countdown = 0
+    @State private var countdownTimer: Timer? = nil
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Text("使用注册迅雷云盘的手机号接收验证码，登录成功后自动回收登录态。")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            TextField("手机号", text: $mobile)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .font(.system(size: 14))
+                                .keyboardType(.phonePad)
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+
+                            Button(action: {
+                                Task { await sendSms() }
+                            }) {
+                                Text(countdown > 0 ? "\(countdown)s" : "获取验证码")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(countdown > 0 ? .gray : Color(hex: "E11D48"))
+                                    .frame(width: 90, height: 34)
+                                    .background(Color.gray.opacity(0.08))
+                                    .cornerRadius(8)
+                            }
+                            .disabled(isSending || countdown > 0)
+                        }
+
+                        TextField("验证码", text: $code)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .font(.system(size: 14))
+                            .keyboardType(.numberPad)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                    .padding(14)
+                    .background(Color.gray.opacity(0.04))
+                    .cornerRadius(12)
+
+                    statusCard
+
+                    Button(action: {
+                        Task { await loginSms() }
+                    }) {
+                        Text(isLoggingIn ? "登录中..." : "验证码登录")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(canLogin ? Color(hex: "E11D48") : Color.gray)
+                            .cornerRadius(12)
+                    }
+                    .disabled(!canLogin || isLoggingIn)
+
+                    Text("与 TVS 配置中心的「迅雷手机号 + 验证码」登录一致。")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(16)
+            }
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("迅雷云盘授权")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                        .foregroundColor(Color(hex: "E11D48"))
+                }
+            }
+        }
+        .onDisappear {
+            countdownTimer?.invalidate()
+        }
+    }
+
+    private var canLogin: Bool {
+        !mobile.isEmpty && !code.isEmpty
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(errorText.isEmpty ? Color.green : Color.red)
+                .frame(width: 8, height: 8)
+            Text(errorText.isEmpty ? statusText : errorText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.gray.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    private func sendSms() async {
+        let trimmed = mobile.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorText = "请输入手机号"
+            return
+        }
+        errorText = ""
+        isSending = true
+        statusText = "正在发送验证码..."
+        defer { isSending = false }
+        do {
+            _ = try await NodeLoginAPIClient.request(
+                "POST",
+                "/website/api/thunder/sms/send",
+                body: ["mobile": trimmed]
+            )
+            statusText = "验证码已发送，请输入短信验证码"
+            startCountdown()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "发送失败"
+        }
+    }
+
+    private func loginSms() async {
+        isLoggingIn = true
+        errorText = ""
+        statusText = "正在登录..."
+        defer { isLoggingIn = false }
+        do {
+            _ = try await NodeLoginAPIClient.request(
+                "POST",
+                "/website/api/thunder/sms/login",
+                body: ["code": code.trimmingCharacters(in: .whitespacesAndNewlines)]
+            )
+            statusText = "登录成功"
+            _ = await NodeCredentialSyncService.shared.saveProfile()
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "登录失败"
+        }
+    }
+
+    private func startCountdown() {
+        countdownTimer?.invalidate()
+        countdown = 60
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+            if countdown > 1 {
+                countdown -= 1
+            } else {
+                countdown = 0
+                timer.invalidate()
+                countdownTimer = nil
+            }
         }
     }
 }

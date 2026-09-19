@@ -1548,6 +1548,11 @@ struct CloudAuthCenterView: View {
     @State private var show139NativeQR = false
     @State private var show189NativeQR = false
     @State private var showXunleiNativeQR = false
+    @State private var showNode115Login = false
+    @State private var showNode123Login = false
+    @State private var showNode139Login = false
+    @State private var showNode189Login = false
+    @State private var showNodeXunleiLogin = false
     @State private var showGuangyaQR = false
     @State private var showWoniu4kLogin = false
     @State private var webAuthDriveType: CloudDriveManager.DriveType? = nil
@@ -1634,6 +1639,25 @@ struct CloudAuthCenterView: View {
             }
             .sheet(isPresented: $showXunleiNativeQR) {
                 NativeCloudQRLoginView(driveType: .xunlei)
+            }
+            .sheet(isPresented: $showNode115Login) {
+                NodeScanLoginRootView(
+                    provider: "pan115",
+                    title: "115 网盘授权",
+                    tip: "使用 115 App 或浏览器扫码，确认后自动回收 Cookie，与 TVS 配置中心扫码登录一致。"
+                )
+            }
+            .sheet(isPresented: $showNode123Login) {
+                NodePan123LoginView()
+            }
+            .sheet(isPresented: $showNode139Login) {
+                NodePan139SMSLoginView()
+            }
+            .sheet(isPresented: $showNode189Login) {
+                NodePan189LoginRootView()
+            }
+            .sheet(isPresented: $showNodeXunleiLogin) {
+                NodeXunleiSMSLoginView()
             }
             .sheet(isPresented: $showGuangyaQR) {
                 NodeGuangyaLoginRootView()
@@ -1869,24 +1893,39 @@ struct CloudAuthCenterView: View {
                         authButtonLabel("网页登录兜底", icon: "globe")
                     }
                 } else if type == .pan139 {
+                    Button(action: { showNode139Login = true }) {
+                        authButtonLabel("Node验证码登录", icon: "iphone")
+                    }
                     Button(action: { show139NativeQR = true }) {
-                        authButtonLabel("网页登录授权", icon: "globe")
+                        authButtonLabel("网页兜底", icon: "globe")
                     }
                 } else if type == .pan189 {
+                    Button(action: { showNode189Login = true }) {
+                        authButtonLabel("Node扫码/账号", icon: "iphone")
+                    }
                     Button(action: { show189NativeQR = true }) {
-                        authButtonLabel("网页登录授权", icon: "globe")
+                        authButtonLabel("网页兜底", icon: "globe")
                     }
                 } else if type == .xunlei {
+                    Button(action: { showNodeXunleiLogin = true }) {
+                        authButtonLabel("Node验证码登录", icon: "iphone")
+                    }
                     Button(action: { showXunleiNativeQR = true }) {
-                        authButtonLabel("网页登录授权", icon: "globe")
+                        authButtonLabel("网页兜底", icon: "globe")
                     }
                 } else if type == .pan123 {
+                    Button(action: { showNode123Login = true }) {
+                        authButtonLabel("Node账号登录", icon: "iphone")
+                    }
                     Button(action: { show123NativeQR = true }) {
-                        authButtonLabel("网页登录授权", icon: "globe")
+                        authButtonLabel("网页兜底", icon: "globe")
                     }
                 } else if type == .one15 {
+                    Button(action: { showNode115Login = true }) {
+                        authButtonLabel("Node扫码登录", icon: "iphone")
+                    }
                     Button(action: { show115NativeQR = true }) {
-                        authButtonLabel("网页登录授权", icon: "globe")
+                        authButtonLabel("网页兜底", icon: "globe")
                     }
                 } else {
                     Button(action: { webAuthDriveType = type }) {
