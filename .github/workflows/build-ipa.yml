@@ -471,10 +471,11 @@ jobs:
             echo "📦 Pods 缓存未命中，执行完整 repo-update"
           fi
 
-          # MobileVLCKit 下载源解析（download.videolan.org 在 CI 常不可达）：
+          # MobileVLCKit 下载源解析（videolan.org 官方源在 CI 常不可达）：
           # 1) workflow_dispatch 输入 / secrets.MOBILE_VLC_KIT_URL（env 已注入）
           # 2) 仓库内离线 tarball（Libraries/MobileVLCKit/MobileVLCKit-*.tar.xz）
-          # 3) 默认官方构建产物站 artifacts.videolan.org（3.7.3 稳定版，已实测可达）
+          # 3) 默认 GitHub 镜像 Release hf805864818/MobileVLCKit（3.7.3，内含 podspec，
+          #    CocoaPods :http 可直接消费，GitHub 下载稳定）
           if [ -z "$MOBILE_VLC_KIT_URL" ]; then
             VLC_LOCAL_TARBALL=$(ls Libraries/MobileVLCKit/MobileVLCKit-*.tar.xz 2>/dev/null | head -1 || true)
             if [ -n "$VLC_LOCAL_TARBALL" ]; then
@@ -483,8 +484,8 @@ jobs:
             fi
           fi
           if [ -z "${MOBILE_VLC_KIT_URL:-}" ]; then
-            export MOBILE_VLC_KIT_URL="https://artifacts.videolan.org/VLCKit/MobileVLCKit/MobileVLCKit-3.7.3-319ed2c0-79128878.tar.xz"
-            echo "📦 MobileVLCKit 使用官方构建产物站（artifacts.videolan.org，3.7.3 稳定版）"
+            export MOBILE_VLC_KIT_URL="https://github.com/hf805864818/MobileVLCKit/releases/download/3.7.3/MobileVLCKit-3.7.3.tar.xz"
+            echo "📦 MobileVLCKit 使用 GitHub 镜像 Release（hf805864818/MobileVLCKit，3.7.3 稳定版）"
           fi
           echo "📦 MobileVLCKit 下载源: ${MOBILE_VLC_KIT_URL}"
 
@@ -516,9 +517,9 @@ jobs:
             fi
           done
           echo "❌ pod install 多次重试后仍失败"
-          echo "💡 提示：若为 MobileVLCKit 下载失败（download.videolan.org 不可达），"
+          echo "💡 提示：若为 MobileVLCKit 下载失败，"
           echo "   请用 workflow_dispatch 手动触发并填写 mobile_vlc_url 备用源，"
-          echo "   或将离线包放入仓库 Libraries/MobileVLCKit/MobileVLCKit-3.6.0b12-8a6d7aeb-6ceb56b8.tar.xz 后重试"
+          echo "   或将离线包放入仓库 Libraries/MobileVLCKit/MobileVLCKit-3.7.3.tar.xz 后重试"
           exit 1
 
       - name: 🔧 修复 PushPlayView/PushPlayStore 路径 (pod install 后)

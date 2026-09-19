@@ -5,13 +5,14 @@ target 'vbox' do
 
   # VLC 兼容播放内核，用于 MKV / HEVC / 10bit / HDR / 多音轨等系统播放器不稳定的资源
   # 默认使用 3.7.3 稳定版；CI 可通过 MOBILE_VLC_KIT_URL 覆盖下载地址
-  # （download.videolan.org 在部分 CI 网络不可达，CI 默认走官方构建产物站
-  #   artifacts.videolan.org，也支持指向任意镜像/仓库内离线 tar）
+  # （videolan.org 官方源在部分 CI 网络不可达，默认走 GitHub 镜像 Release
+  #   https://github.com/hf805864818/MobileVLCKit，包内含 podspec + 根目录 xcframework，
+  #   也支持指向任意镜像/仓库内离线 tar）
   vlc_kit_url = ENV['MOBILE_VLC_KIT_URL']
   if vlc_kit_url && !vlc_kit_url.empty?
     pod 'MobileVLCKit', :http => vlc_kit_url
   else
-    pod 'MobileVLCKit', '3.7.3'
+    pod 'MobileVLCKit', :http => 'https://github.com/hf805864818/MobileVLCKit/releases/download/3.7.3/MobileVLCKit-3.7.3.tar.xz'
   end
 
   # MDK 播放内核（wang-bin 开源），支持帧回调画中画
