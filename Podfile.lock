@@ -1,0 +1,41 @@
+PODS:
+  - GRDB.swift (6.24.1):
+    - GRDB.swift/standard (= 6.24.1)
+  - GRDB.swift/standard (6.24.1)
+  - Kanna (6.0.1)
+  - mdk (0.38.0)
+  - MobileVLCKit (3.7.3)
+  - swift-mdk (0.38.0):
+    - mdk
+
+DEPENDENCIES:
+  - GRDB.swift
+  - Kanna
+  - "MobileVLCKit (from `{:http=>\"https://github.com/hf805864818/MobileVLCKit/releases/download/3.7.3/MobileVLCKit-3.7.3.tar.xz\"}`)"
+  - swift-mdk
+
+SPEC REPOS:
+  trunk:
+    - GRDB.swift
+    - Kanna
+    - mdk
+    - swift-mdk
+
+EXTERNAL SOURCES:
+  MobileVLCKit:
+    :http: https://github.com/hf805864818/MobileVLCKit/releases/download/3.7.3/MobileVLCKit-3.7.3.tar.xz
+
+CHECKOUT OPTIONS:
+  MobileVLCKit:
+    :http: https://github.com/hf805864818/MobileVLCKit/releases/download/3.7.3/MobileVLCKit-3.7.3.tar.xz
+
+SPEC CHECKSUMS:
+  GRDB.swift: 136dcb5d8dddca50aae3ba7d77475f79e7232cd8
+  Kanna: d0bcd984b09852699f485aa467afb3f48828f803
+  mdk: d04505395fc419371541c5092b15b0e9c555b8a4
+  MobileVLCKit: 73d7ddb52238b6885b70b0f281cae75a0a6e3ac0
+  swift-mdk: 34a45898d54fec469b479d24d7e236a3b1fa323c
+
+PODFILE CHECKSUM: e699e4383a8f5af36ae99cbf1e0d423c95f57711
+
+COCOAPODS: 1.17.0
