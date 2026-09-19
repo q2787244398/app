@@ -749,6 +749,10 @@ struct EpisodeItem: Identifiable {
     var pan139CatalogId: String?
     /// 189 文件 ID（仅天翼云盘切换集数使用）
     var pan189FileId: String?
+    /// Node 托管盘 playID（A1 接缝 /spider/push/4/play 使用，115/123/139/189/迅雷/光鸭/蜗牛）
+    var nodePlayID: String?
+    /// Node 托管盘类型（切集取链时用于映射盘别）
+    var nodeDriveType: CloudDriveManager.DriveType?
     /// 播放头信息
     var headers: [String: String] = [:]
     /// 是否需要兼容内核
@@ -765,6 +769,7 @@ struct EpisodeItem: Identifiable {
         case pan139 = "pan139"       // 139云盘
         case pan189 = "pan189"       // 天翼云盘
         case drive = "drive"        // 其他网盘
+        case node = "node"           // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛）
     }
 }
 
@@ -2817,7 +2822,7 @@ class PlayerState: ObservableObject {
                         
                         if let driveType = CloudDriveManager.detectDrive(from: url) {
                             let tokens = CloudDriveManager.shared.tokens(for: driveType)
-                            if !tokens.isEmpty {
+                            if !tokens.isEmpty || CloudDriveManager.isNodeManagedDrive(driveType) {
                                 log("[PlayerV2] 尝试播放 \(driveType.displayName)")
                                 await handleDriveUrl(url, driveType: driveType)
                                 return
@@ -2852,7 +2857,7 @@ class PlayerState: ObservableObject {
                 for link in result.links {
                     if let driveType = CloudDriveManager.detectDrive(from: link.url) {
                         let tokens = CloudDriveManager.shared.tokens(for: driveType)
-                        if !tokens.isEmpty {
+                        if !tokens.isEmpty || CloudDriveManager.isNodeManagedDrive(driveType) {
                             log("[PlayerV2] 尝试播放 \(driveType.displayName): \(link.name)")
                             await handleDriveUrl(link.url, driveType: driveType)
                             return
@@ -2904,6 +2909,17 @@ class PlayerState: ObservableObject {
         if !vboxParams.isEmpty {
             log("[PlayerV2] 检测到详情页指定网盘文件参数，已分离干净分享链接")
         }
+
+        // ═══════════════════════════════════════════════════════════
+        // ★ Node 托管网盘统一入口（115/123/139/189/迅雷/光鸭/蜗牛）
+        // 文件列表与播放取链全部走 A1 接缝（Node 常驻系统），不依赖本地 Token；
+        // 失败直接报错（不降级原生路链）。百度/夸克/阿里/UC 原生链路不受影响。
+        // ═══════════════════════════════════════════════════════════
+        if CloudDriveManager.isNodeManagedDrive(driveType) {
+            await handleNodeManagedDrive(urlString: urlString, cleanShareURL: cleanShareURL, vboxParams: vboxParams, driveType: driveType)
+            return
+        }
+
         let tokens = CloudDriveManager.shared.tokens(for: driveType)
         guard !tokens.isEmpty else {
             await MainActor.run {
@@ -3553,6 +3569,59 @@ class PlayerState: ObservableObject {
         } catch {
             let msg = "解析异常: \(error.localizedDescription)"
             log("[PlayerV2] ❌ \(driveType.displayName) \(msg)")
+            await MainActor.run {
+                self.failPlayback(msg)
+            }
+        }
+    }
+
+    /// Node 托管网盘统一处理（115/123/139/189/迅雷/光鸭/蜗牛）：
+    /// 解析文件列表（集数）→ 定位选中集 → A1 接缝取链播放。
+    /// 失败直接报错，不降级原生路链（vbox 原生路链已废弃）。
+    private func handleNodeManagedDrive(urlString: String, cleanShareURL: String, vboxParams: [String: String], driveType: CloudDriveManager.DriveType) async {
+        CloudDriveManager.onLog = { [weak self] msg in
+            self?.log("[PlayerV2] \(msg)")
+        }
+        log("[Node] \(driveType.displayName) ①获取文件列表 (A1 接缝)...")
+        do {
+            let share = try await CloudDriveManager.shared.resolveNodeShare(cleanShareURL, driveType: driveType)
+            let entries = share.entries
+
+            // 详情页指定剧集：通过 vbox_node fragment（playID）定位用户点击的集数
+            let selectedIndex: Int
+            if let playID = vboxParams["vbox_node"], !playID.isEmpty {
+                guard let idx = entries.firstIndex(where: { $0.playID == playID }) else {
+                    log("[Node] ❌ \(driveType.displayName) 详情页指定剧集未命中文件列表")
+                    throw NodePanError.nodeRejected("详情页指定剧集未命中文件列表")
+                }
+                selectedIndex = idx
+            } else {
+                selectedIndex = 0
+            }
+            let reason = vboxParams["vbox_node"] != nil ? "详情页指定剧集" : (entries.count == 1 ? "自动播放单文件" : "自动播放")
+            log("[Node] ✅ \(driveType.displayName) 共\(entries.count)个文件，选集: index=\(selectedIndex) reason=\(reason)")
+
+            await MainActor.run {
+                currentEpisodeIndex = selectedIndex
+                episodeItems = entries.enumerated().map { idx, entry in
+                    EpisodeItem(id: idx, name: entry.name, url: cleanShareURL,
+                                sourceType: .node, nodePlayID: entry.playID, nodeDriveType: driveType)
+                }
+            }
+
+            guard !entries.isEmpty else {
+                await MainActor.run {
+                    self.failPlayback("\(driveType.displayName)文件列表为空")
+                }
+                return
+            }
+
+            // 播放选中的文件（A1 接缝 /spider/push/4/play）
+            let result = try await CloudDriveManager.shared.resolveNodePlay(playID: entries[selectedIndex].playID, driveType: driveType)
+            await playResolvedDriveVideo(result)
+        } catch {
+            let msg = "\(driveType.displayName) Node 解析失败: \(error.localizedDescription)"
+            log("[Node] ❌ \(msg)")
             await MainActor.run {
                 self.failPlayback(msg)
             }
@@ -5409,6 +5478,9 @@ class PlayerState: ObservableObject {
                     // 其他网盘
                     await self.playDriveVideo(url: episode.url, headers: episode.headers)
                 }
+            case .node:
+                // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛）：A1 接缝切集
+                await self.playNodeEpisode(episode: episode)
             }
         }
     }
@@ -5697,6 +5769,32 @@ class PlayerState: ObservableObject {
             log("[189] 切集失败: \(error.localizedDescription)")
             await MainActor.run {
                 self.failPlayback("天翼切集失败: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// 播放 Node 托管网盘指定集数（A1 接缝 /spider/push/4/play）
+    private func playNodeEpisode(episode: EpisodeItem) async {
+        guard let playID = episode.nodePlayID, !playID.isEmpty else {
+            log("[Node] ❌ 切集失败: 缺少 Node playID")
+            await MainActor.run {
+                self.failPlayback("切集失败: 缺少 Node 播放参数")
+            }
+            return
+        }
+        let driveType = episode.nodeDriveType ?? .guangya
+        log("[Node] \(driveType.displayName) 切集播放: \(episode.name) (playID 前 24 字符=\(playID.prefix(24)))")
+        await MainActor.run { isLoading = true }
+        do {
+            let result = try await CloudDriveManager.shared.resolveNodePlay(playID: playID, driveType: driveType)
+            await MainActor.run {
+                currentEpisodeIndex = episode.id
+            }
+            await playResolvedDriveVideo(result)
+        } catch {
+            log("[Node] \(driveType.displayName) 切集失败: \(error.localizedDescription)")
+            await MainActor.run {
+                self.failPlayback("\(driveType.displayName)切集失败: \(error.localizedDescription)")
             }
         }
     }

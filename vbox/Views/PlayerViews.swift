@@ -483,6 +483,12 @@ struct VideoDetailView: View {
         }
         
         switch driveType {
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k:
+            // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛）：
+            // 文件列表走 A1 接缝（Node 常驻系统），失败直接报错，无原生兜底。
+            // 必须排在原生分支之前，确保命中 Node 链路。
+            return await expandNodeDrive(driveName: driveName, links: links, driveType: driveType)
+
         case .quark:
             guard let token = CloudDriveManager.shared.tokens(for: .quark).first else {
                 return .failed("未配置夸克网盘账号")
@@ -732,6 +738,31 @@ struct VideoDetailView: View {
             }
             return .loaded(fallback)
         }
+    }
+
+    /// 展开 Node 托管网盘的文件列表（集数）：A1 接缝 /spider/push/4/detail
+    /// 失败直接报错，不降级原生路链（百度/夸克/阿里/UC 原生链路不受影响）
+    private func expandNodeDrive(driveName: String, links: [(url: String, name: String, driveType: CloudDriveManager.DriveType?, driveName: String)], driveType: CloudDriveManager.DriveType) async -> DriveExpandState {
+        var allExpanded: [CloudPanLink] = []
+        for link in links {
+            do {
+                let share = try await CloudDriveManager.shared.resolveNodeShare(link.url, driveType: driveType)
+                let items = share.entries.enumerated().map { fileIndex, entry in
+                    makeCloudPanLink(
+                        url: appendVboxFragment(to: link.url, params: ["vbox_node": entry.playID]),
+                        name: entry.name,
+                        driveType: driveType,
+                        driveName: driveName,
+                        index: allExpanded.count + fileIndex
+                    )
+                }
+                allExpanded.append(contentsOf: items)
+            } catch {
+                // 无兜底：失败直接报错，便于排查
+                return .failed("\(driveType.displayName)资源加载失败：\(error.localizedDescription)")
+            }
+        }
+        return allExpanded.isEmpty ? .empty : .loaded(allExpanded)
     }
 
     private func makeCloudPanLink(url: String, name: String, driveType: CloudDriveManager.DriveType?, driveName: String, index: Int) -> CloudPanLink {

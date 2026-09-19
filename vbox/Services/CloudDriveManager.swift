@@ -98,7 +98,7 @@ class CloudDriveManager: ObservableObject {
             case .uc: return "Cookie"
             case .pan123: return "Cookie / Token"
             case .pan139: return "Cookie / Session"
-            case .pan189: return "Cookie / 扫码登录"
+            case .pan189: return "Cookie / 账号密码（短信验证）"
             case .xunlei: return "Cookie / 网页登录"
             case .guangya: return "Token"
             case .woniu4k: return "账号 / 密码"
@@ -10346,22 +10346,61 @@ class CloudDriveManager: ObservableObject {
     /// 走 Node 常驻系统解析分享链接（P1-08/09/15）
     /// 链路：/spider/push/4/detail（分享→文件列表）→ /spider/push/4/play（条目→播放地址）
     private func resolveViaNodePan(shareURL: String, driveType: DriveType) async throws -> PlayResult {
+        let share = try await resolveNodeShare(shareURL, driveType: driveType)
+        guard let first = share.entries.first else {
+            throw DriveError.noPlayURL("\(driveType.displayName): 分享内未找到可播放视频")
+        }
+        return try await resolveNodePlay(playID: first.playID, driveType: driveType)
+    }
+
+    // MARK: - A1 接缝：Node 托管网盘统一判定与解析（详情页/播放器共用）
+
+    /// Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛。
+    /// 百度/夸克/阿里/UC 不在此列，原生路链与播放链路不受任何影响。
+    static func isNodeManagedDrive(_ driveType: DriveType) -> Bool {
+        driveType == .one15 || driveType == .pan123 || driveType == .pan139
+            || driveType == .pan189 || driveType == .xunlei
+            || driveType == .guangya || driveType == .woniu4k
+    }
+
+    /// 解析分享链接 → Node 文件列表（集数），供详情页/播放器展开选集
+    /// （A1 接缝 /spider/push/4/detail；失败直接抛出，无原生兜底）
+    func resolveNodeShare(_ shareURL: String, driveType: DriveType) async throws -> NodePanShareResult {
         guard NodeRuntimeManager.shared.isSystemReady else {
             self.log("[CloudDrive] ❌ \(driveType.displayName) 需要 Node 常驻系统，但 Node 未就绪")
             throw DriveError.tokenNotConfigured("\(driveType.displayName)（Node 未就绪，请稍后重试）")
         }
         let share = try await NodePanResolver.shared.resolveShare(shareURL)
-        guard let first = share.entries.first else {
-            throw DriveError.noPlayURL("\(driveType.displayName): 分享内未找到可播放视频")
+        self.log("[CloudDrive] ✅ \(driveType.displayName) Node 文件列表: \(share.entries.count) 个文件")
+        return share
+    }
+
+    /// 用 playID 换取播放地址（A1 接缝 /spider/push/4/play），返回带正确盘别标识的 PlayResult
+    func resolveNodePlay(playID: String, driveType: DriveType) async throws -> PlayResult {
+        guard NodeRuntimeManager.shared.isSystemReady else {
+            self.log("[CloudDrive] ❌ \(driveType.displayName) 需要 Node 常驻系统，但 Node 未就绪")
+            throw DriveError.tokenNotConfigured("\(driveType.displayName)（Node 未就绪，请稍后重试）")
         }
-        let play = try await NodePanResolver.shared.resolvePlay(playID: first.playID)
-        let alias = driveType == .guangya ? DriveTypeAlias.guangya : DriveTypeAlias.woniu4k
-        return PlayResult(
+        let play = try await NodePanResolver.shared.resolvePlay(playID: playID)
+        let alias: DriveTypeAlias
+        switch driveType {
+        case .one15: alias = .one15
+        case .pan123: alias = .pan123
+        case .pan139: alias = .pan139
+        case .pan189: alias = .pan189
+        case .xunlei: alias = .xunlei
+        case .guangya: alias = .guangya
+        case .woniu4k: alias = .woniu4k
+        default: alias = .woniu4k
+        }
+        let result = PlayResult(
             url: play.url,
             headers: play.headers,
             driveType: alias,
             source: "A1接缝-\(driveType.displayName)"
         )
+        self.log("[CloudDrive] ✅ \(driveType.displayName) Node 取链成功: \(play.url.prefix(100))")
+        return result
     }
 
     private func isLikelyAuthInvalid(_ error: Error) -> Bool {

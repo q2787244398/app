@@ -468,11 +468,11 @@ struct NodeWoniu4kLoginView: View {
     }
 }
 
-// MARK: - 通用 Node 扫码登录（115 / 189）
+// MARK: - 通用 Node 扫码登录（115）
 //
 // 复用光鸭扫码链路：POST /website/api/login/start {provider} -> {taskId, qrImage}
 //                POST /website/api/login/poll  {provider, taskId} -> {status}
-// provider 由调用方传入（"pan115" / "pan189"），登录成功统一 saveProfile 拉回 Keychain。
+// provider 由调用方传入（目前仅 "pan115"），登录成功统一 saveProfile 拉回 Keychain。
 
 struct NodeScanLoginRootView: View {
     @Environment(\.dismiss) private var dismiss
@@ -1086,48 +1086,29 @@ struct NodeCaptchaWebView: UIViewRepresentable {
     }
 }
 
-// MARK: - 189 天翼网盘登录入口（扫码 / 账号密码 双模式）
+// MARK: - 189 天翼网盘登录入口（仅账号密码 + 短信验证码）
 //
-// 对齐 bundle renderPan189：
-//   - 扫码: POST /website/api/login/start {provider:"pan189"}
-//   - 账号: PUT /website/api/pan189/account {account, password}，若返回 sms:true
+// 对齐 bundle renderPan189 与 TVS：189 官方已取消二维码登录，扫码通道
+// open.e.189.cn oauth qrcode 已失效（扫码只会提示"页面已过期"），因此
+// 不提供扫码入口。登录流程：
+//   - PUT /website/api/pan189/account {account, password}，若返回 sms:true
 //           再 POST /website/api/pan189/sms/login {code}
 
 struct NodePan189LoginRootView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var mode = 0 // 0=扫码 1=账号密码
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                Picker("登录方式", selection: $mode) {
-                    Text("扫码登录").tag(0)
-                    Text("账号密码").tag(1)
+            NodePan189AccountLoginView()
+                .background(Color(uiColor: .systemBackground))
+                .navigationTitle("天翼网盘授权")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("关闭") { dismiss() }
+                            .foregroundColor(Color(hex: "E11D48"))
+                    }
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
-
-                if mode == 0 {
-                    NodeScanQRLoginView(
-                        provider: "pan189",
-                        title: "天翼网盘扫码授权",
-                        tip: "使用天翼网盘 App 或浏览器扫码，确认后自动回收 Cookie。"
-                    )
-                } else {
-                    NodePan189AccountLoginView()
-                }
-            }
-            .background(Color(uiColor: .systemBackground))
-            .navigationTitle("天翼网盘授权")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("关闭") { dismiss() }
-                        .foregroundColor(Color(hex: "E11D48"))
-                }
-            }
         }
     }
 }
