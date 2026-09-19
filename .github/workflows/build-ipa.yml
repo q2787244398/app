@@ -264,6 +264,38 @@ jobs:
       - name: 🔗 注入 Quarkproxy.xcframework + GoProxyManager.swift 到工程
         run: ruby scripts/configure_quarkproxy_link.rb
 
+      - name: ⬇️ 下载 NodeMobile.xcframework (nodejs-mobile v18.20.4)
+        run: |
+          set -euo pipefail
+          DEST="vbox/Libraries/NodeMobile"
+          if [ -d "$DEST/NodeMobile.xcframework" ]; then
+            echo "✅ NodeMobile.xcframework 已存在，跳过下载"
+            exit 0
+          fi
+          mkdir -p "$DEST"
+          URL="https://github.com/nodejs-mobile/nodejs-mobile/releases/download/v18.20.4/nodejs-mobile-v18.20.4-ios.zip"
+          ZIP="/tmp/nodejs-mobile-ios.zip"
+          for attempt in 1 2 3; do
+            echo "⬇️ 下载 NodeMobile (第 ${attempt}/3 次)..."
+            if curl -L --retry 3 --retry-delay 5 --fail -o "$ZIP" "$URL"; then
+              break
+            fi
+            echo "⚠️ 下载失败，重试..."
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 10))
+          done
+          [ -s "$ZIP" ] || { echo "❌ NodeMobile 下载失败"; exit 1; }
+          unzip -o "$ZIP" -d /tmp/nodejs-mobile-extract
+          # 官方 zip 顶层为 NodeMobile.xcframework（含 ios-arm64 真机 + simulator 双 slice）
+          FW=$(find /tmp/nodejs-mobile-extract -maxdepth 1 -type d -name "NodeMobile.xcframework" | head -1)
+          [ -z "$FW" ] && { echo "❌ zip 内未找到 NodeMobile.xcframework"; exit 1; }
+          cp -R "$FW" "$DEST/"
+          echo "✅ NodeMobile.xcframework: $(du -sh $DEST/NodeMobile.xcframework | cut -f1)"
+          # 确认真机 arm64 二进制存在
+          ls -lh "$DEST/NodeMobile.xcframework/ios-arm64/NodeMobile.framework/NodeMobile"
+
+      - name: 🔗 注入 NodeMobile.xcframework + noderuntime 资源到工程
+        run: ruby scripts/configure_noderuntime_link.rb
+
       - name: 📝 添加 NSAllowsLocalNetworking 到 Info.plist
         run: |
           # 允许 AVPlayer 访问 127.0.0.1 本地代理

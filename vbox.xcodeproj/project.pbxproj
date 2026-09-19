@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		NODEC0DE0101 /* NodeRunner.h in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0201 /* NodeRunner.h */; };
+		NODEC0DE0102 /* NodeRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0202 /* NodeRunner.mm */; };
+		NODEC0DE0103 /* NodeRuntimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0203 /* NodeRuntimeManager.swift */; };
+		NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0206 /* NodeCredentialSyncService.swift */; };
+		NODEC0DE0104 /* NodeMobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = NODEC0DE0204 /* NodeMobile.xcframework */; };
+		NODEC0DE0105 /* NodeMobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = NODEC0DE0204 /* NodeMobile.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		NODEC0DE0106 /* noderuntime in Resources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0205 /* noderuntime */; };
 		004C1F840658F7D4F4666871 /* AppLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9F73BC83E18E7C07A730C2 /* AppLogStore.swift */; };
 		006F22E2689A48FF923F1D13 /* AliyunPgConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50C8D2B04A447F8B0FB044B /* AliyunPgConfig.swift */; };
 		01399D0637B52CDB9ADC35E1 /* RemoteWelfareHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A80AEF200D3D6044272475 /* RemoteWelfareHomeView.swift */; };
@@ -375,6 +382,7 @@
 				CED0C11DF47D8EA5E33E4A9D /* hogweed.xcframework in Embed Frameworks */,
 				D76C250B58207918B87B9816 /* nettle.xcframework in Embed Frameworks */,
 				9E500FE500FDAD63873B5803 /* gmp.xcframework in Embed Frameworks */,
+				NODEC0DE0105 /* NodeMobile.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -382,6 +390,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		NODEC0DE0201 /* NodeRunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NodeRunner.h; sourceTree = "<group>"; };
+		NODEC0DE0202 /* NodeRunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = NodeRunner.mm; sourceTree = "<group>"; };
+		NODEC0DE0203 /* NodeRuntimeManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeRuntimeManager.swift; sourceTree = "<group>"; };
+		NODEC0DE0206 /* NodeCredentialSyncService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeCredentialSyncService.swift; sourceTree = "<group>"; };
+		NODEC0DE0204 /* NodeMobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = NodeMobile.xcframework; path = Libraries/NodeMobile/NodeMobile.xcframework; sourceTree = "<group>"; };
+		NODEC0DE0205 /* noderuntime */ = {isa = PBXFileReference; lastKnownFileType = folder; name = noderuntime; path = Resources/noderuntime; sourceTree = "<group>"; };
 		00AC92B4E710C182A5880903 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		01882BD0F65A4C05B6176223 /* ExtscreenAPIClient.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ExtscreenAPIClient.swift; sourceTree = "<group>"; };
 		024DA0335408EA5B886523D6 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
@@ -737,6 +751,7 @@
 				2E8DE5C3A7C5B07386AA28A8 /* libiconv.tbd in Frameworks */,
 				ED466A8C3381025D33D7B279 /* libc++.tbd in Frameworks */,
 				5C8054E12A423104F7A17FDC /* Quarkproxy.xcframework in Frameworks */,
+				NODEC0DE0104 /* NodeMobile.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1417,6 +1432,8 @@
 				65F7DF53AC7BE65114CFABCD /* vbox */,
 				835175C81EFA00EEEAF57EC4 /* Frameworks */,
 				7028D056D191B25749035E8F /* Quarkproxy.xcframework */,
+				NODEC0DE0204 /* NodeMobile.xcframework */,
+				NODEC0DE0205 /* noderuntime */,
 			);
 			path = vbox;
 			sourceTree = "<group>";
@@ -1512,6 +1529,8 @@
 				D8815F39A6013262E7F5B211 /* PushPlayStore.swift */,
 				30877432D1026706D7E805DA /* PythonWebViewBridge.swift */,
 				73C8EB5BB682575EC87A171A /* PythonSpiderEngine.swift */,
+				NODEC0DE0203 /* NodeRuntimeManager.swift */,
+				NODEC0DE0206 /* NodeCredentialSyncService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -1602,8 +1621,19 @@
 				D58E72E310275DFF6C15C0C8 /* PythonWebViewBridge.h */,
 				E9DF469611A11F5125227C37 /* PythonBridge.m */,
 				7B95E909348334896A68F812 /* PythonBridge.h */,
+				NODEC0DE0301 /* NodeMobile */,
 			);
 			path = Libraries;
+			sourceTree = "<group>";
+		};
+		NODEC0DE0301 /* NodeMobile */ = {
+			isa = PBXGroup;
+			children = (
+				NODEC0DE0201 /* NodeRunner.h */,
+				NODEC0DE0202 /* NodeRunner.mm */,
+			);
+			name = NodeMobile;
+			path = NodeMobile;
 			sourceTree = "<group>";
 		};
 		G10999 /* Products */ = {
@@ -1716,6 +1746,7 @@
 				A10144 /* video_sources.json in Resources */,
 				A10146 /* default_live.m3u in Resources */,
 				A10153 /* MaShanZheng-Regular.ttf in Resources */,
+				NODEC0DE0106 /* noderuntime in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1961,6 +1992,10 @@
 				20AF18EC87E428A1E78AFF67 /* GoProxyManager.swift in Sources */,
 				F945DD57EC3787BF073E06F6 /* GoProxyManager.swift in Sources */,
 				1D00346E3DCB45BCF7729419 /* GoProxyManager.swift in Sources */,
+				NODEC0DE0101 /* NodeRunner.h in Sources */,
+				NODEC0DE0102 /* NodeRunner.mm in Sources */,
+				NODEC0DE0103 /* NodeRuntimeManager.swift in Sources */,
+				NODEC0DE0107 /* NodeCredentialSyncService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2031,6 +2066,7 @@
 					"$(SRCROOT)/vbox/Libraries/MPV/MPVKitDependencies",
 					"$(SRCROOT)/vbox/Libraries/IJKPlayer",
 					"$(SRCROOT)/vbox/Libraries",
+					"$(SRCROOT)/vbox/Libraries/NodeMobile",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
@@ -2081,6 +2117,7 @@
 					"$(SRCROOT)/vbox/Libraries/MPV/MPVKitDependencies",
 					"$(SRCROOT)/vbox/Libraries/IJKPlayer",
 					"$(SRCROOT)/vbox/Libraries",
+					"$(SRCROOT)/vbox/Libraries/NodeMobile",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (

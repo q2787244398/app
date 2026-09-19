@@ -20,6 +20,8 @@ struct VBoxApp: App {
         RemuxProxyServer.shared.start()  // 转封装代理（PiP 用，端口 18081）
         // [优化7] 启动 Go HTTP/2 代理引擎（夸克播放加速）
         GoProxyManager.shared.start()
+        // P1-01: 启动 Node 常驻系统（网盘解析引擎，端口 58080；不影响既有网盘）
+        NodeRuntimeManager.shared.start()
         // 触发数据库初始化（建表 + 数据迁移）
         let _ = DatabaseManager.shared
     }
