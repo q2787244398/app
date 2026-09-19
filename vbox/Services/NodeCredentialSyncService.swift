@@ -309,6 +309,26 @@ final class NodeCredentialSyncService: NSObject {
         credential.updatedAt = Date()
         credential.lastCheckedAt = Date()
         CloudDriveAuthManager.shared.saveCredential(credential, syncLegacyToken: false)
+        mirrorToLegacyTokens(driveType: driveType, credential: credential)
+    }
+
+    /// 把光鸭/蜗牛的登录态镜像到「复制粘贴 Token 兜底」列表（纯展示 + 可删）。
+    /// 光鸭 Token 在 extra["token"]，蜗牛登录态在 cookie；解析仍走 Node（A1 接缝），
+    /// 镜像条目仅供用户在兜底界面查看/删除，不参与原生解析链路。
+    private func mirrorToLegacyTokens(driveType: String, credential: CloudDriveCredential) {
+        guard let driveType = CloudDriveManager.DriveType(rawValue: driveType) else { return }
+        switch driveType {
+        case .guangya:
+            if let token = credential.extra["token"], !token.isEmpty {
+                CloudDriveManager.shared.addOrReplaceToken(type: .guangya, name: "光鸭-Node", value: token)
+            }
+        case .woniu4k:
+            if let cookie = credential.cookie, !cookie.isEmpty {
+                CloudDriveManager.shared.addOrReplaceToken(type: .woniu4k, name: "蜗牛-Node", value: cookie)
+            }
+        default:
+            break
+        }
     }
 
     private func makeEmptyCredential(driveType: String) -> CloudDriveCredential {

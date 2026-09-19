@@ -1574,7 +1574,7 @@ struct CloudAuthCenterView: View {
                     providerAccountCard(type: .pan139, note: "139云盘（移动云盘）支持网页扫码登录回收 Cookie。")
                     providerAccountCard(type: .pan189, note: "天翼云盘支持原生扫码登录获取 Cookie，用于解析播放分享链接。")
                     providerAccountCard(type: .xunlei, note: "迅雷云盘支持网页登录获取 Cookie，用于后续迅雷云盘资源解析播放。")
-                    nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：扫码授权后自动回收 Token，解析链路走 A1 接缝。")
+                    nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：手机验证码登录后自动回收 Token，解析链路走 A1 接缝。")
                     nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。")
                     manualTokenFallbackCard
 
@@ -1955,7 +1955,7 @@ struct CloudAuthCenterView: View {
             HStack(spacing: 10) {
                 if type == .guangya {
                     Button(action: { showGuangyaQR = true }) {
-                        authButtonLabel("扫码授权", icon: "qrcode")
+                        authButtonLabel("手机验证码登录", icon: "iphone")
                     }
                 } else if type == .woniu4k {
                     Button(action: { showWoniu4kLogin = true }) {
