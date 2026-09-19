@@ -37,17 +37,63 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
 
     init(siteKey: String) {
         self.siteKey = siteKey
-        // key 映射：nodejs_xxx / csp_xxx → xxx
-        var key = siteKey
-        for prefix in ["nodejs_", "csp_"] where key.hasPrefix(prefix) {
-            key = String(key.dropFirst(prefix.count))
-            break
-        }
-        self.nodeKey = key
+        // key 映射：nodejs_xxx / csp_xxx → xxx，再经订阅源 key → bundle spider key 归一化
+        self.nodeKey = Self.normalizeNodeKey(siteKey)
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
         session = URLSession(configuration: config)
+    }
+
+    // MARK: - 订阅源 key → Node bundle spider key 归一化
+    //
+    // 阶段2实测：订阅源蜘蛛 key（AiNewMuOu / SportAiKaFei / 玩偶 …）与 Node bundle
+    // （kstore_index.js）内注册的 spider key（muou / sportaikafei / wogg …）不一致，
+    // 直接按原 key 桥接 → /spider/{key}/3/* 命中 404。
+    // 规则：1) 先去 nodejs_/csp_ 前缀；2) 显式映射表命中；3) 小写兜底；4) 原样透传。
+
+    /// 订阅源 key → bundle 注册 key（来自 node-spider-key-map.json，84/96 可映射）
+    static let bundleKeyMap: [String: String] = [
+        "Douban": "douban", "Doubanaaaa": "gengxin", "Wexconfig": "baseset", "MyPan": "mypan",
+        "玩偶": "wogg", "AiNewGuanYing": "guanying", "AiQwMkv": "qwmkv", "AiNewPianKu": "pianku",
+        "AiNewHuBan": "huban", "AiNewMuOu": "muou", "AiNewDuoDuo": "duoduo", "AiNewJuTou": "jutou",
+        "AiNewLibvio": "libvio", "原盘": "zhinan4k", "蜗牛": "woniu4k", "AiPan1Me": "pan123ziyuan",
+        "AiNewYiDong4K": "yidong4k", "WexHanXiaoQuan": "hanxiaoquan", "WexAiGuaZi": "guazi",
+        "WexAiDuBoKu": "wexDuBoKu", "WexAiYueYue": "wexYueYue", "WexAiWenCai": "wencai",
+        "WexFengYe4K": "wexfengye4k", "AppV7 | 大师兄": "appv7dashixiong", "AppV7 | 粉猪追剧": "appv7fenzhu",
+        "AppV7 | 咸鱼": "appv7xianyu", "AppV7 | 追剧达人": "appv7zhuijudaren", "AppV7 | 小柚子": "appv7xiaoyouzi",
+        "AppV7 | 小柠檬": "appv7xiaoningmeng", "AppV7 | 蒙太奇": "appv7mengtaiqi",
+        "AppV7 | 零零七影视": "appv7linglingqi", "AppV7 | 小柿子": "appv7xiaoshizi",
+        "AppV7 | 小黄人": "appv7xiaohuangren", "WexAiYiYs": "yiyingshi", "WexAiReBo": "rebo",
+        "WexAiBoBo": "bobo", "WexAiIkanBot": "ikanbot", "LiveAiHuYa": "huya", "LiveAiDouYu": "douyu",
+        "LiveAiBiLi": "bililive", "ManJuAiHongGuo": "manjuhongguo", "ManJuAiHuoLong": "manjuhuolong",
+        "ManJuAiQiMao": "manjuqimao", "ManJuAiXiFan": "manjuxifan", "ManJuAiHeMa": "hema",
+        "DuanJuAiHaoKan": "baiduduanju", "DuanJuAiQiMiao": "duanjuqimiao", "DuanJuAiXingYa": "duanjuxingya",
+        "DuanJuAiWeiGuan": "duanjuweiguan", "AnimeXiFan": "animexifan", "AnimeCiYuanCheng": "animeciyuancheng",
+        "AnimeAiMoDu": "animemodu", "BookHongGuo": "bookhongguo", "BookHeMa": "bookhema",
+        "BookAiShiJie": "bookaishijie", "BookAiYueTing": "bookaiyueting", "ChildrenAiBaoBao": "childrenaibaobao",
+        "ChildrenAiBeiWa": "childrenaibeiwa", "ChildrenAiTuTu": "childrenaitutu", "MusicAiQingTing": "musicaiqingting",
+        "MusicAiIKtv": "musicaikg", "MusicAiKuWoa": "musicaikuwoa", "MusicAi163": "musicai163",
+        "MusicAiKuWo": "musicaikuwo", "MusicAiLunHui": "musicailunhui", "SportAiFeiQiu": "sportaifeiqiu",
+        "SportAiGuaZi": "sportaiguazi", "SportAiKanQiuTong": "sportaikanqiutong", "SportAiKanqiu": "sportaikanqiu",
+        "SportAiKaFei": "sportaikafei", "SportAiWwe": "sportaiwwe", "FakeAi115Share": "fake115share",
+        "biliys": "biliys", "bilibili": "bilibili", "bilixiqu": "bilixiqu", "biliych": "biliych",
+        "少儿教育": "少儿教育", "小学课堂": "小学课堂", "初中课堂": "初中课堂", "高中教育": "高中教育",
+        "SoAiHaiYin": "soaihaiyin", "SoAiPanSoo": "soaipansoo", "SoAiQuPanShe": "soaiqupanshe",
+        "SoKaKa": "sokaka",
+    ]
+
+    /// 归一化：去前缀 → 映射表 → 小写兜底 → 原样
+    static func normalizeNodeKey(_ key: String) -> String {
+        var stripped = key
+        for prefix in ["nodejs_", "csp_"] where stripped.hasPrefix(prefix) {
+            stripped = String(stripped.dropFirst(prefix.count))
+            break
+        }
+        if let mapped = bundleKeyMap[stripped] { return mapped }
+        let lowered = stripped.lowercased()
+        if lowered != stripped { return lowered }
+        return stripped
     }
 
     // MARK: - 空操作 —— Node 引擎不需要在本地加载 JS
@@ -110,9 +156,14 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("vbox/1.0", forHTTPHeaderField: "User-Agent")
+        // Node 侧要求合法 JSON body：无参数时发 {}，杜绝空 body 触发 HTTP 400
+        let body: Data
         if let params = params {
-            request.httpBody = try? JSONSerialization.data(withJSONObject: params)
+            body = (try? JSONSerialization.data(withJSONObject: params)) ?? Data("{}".utf8)
+        } else {
+            body = Data("{}".utf8)
         }
+        request.httpBody = body
 
         let semaphore = DispatchSemaphore(value: 0)
         var resultData: Data?

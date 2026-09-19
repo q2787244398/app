@@ -210,14 +210,9 @@ class SpiderManager: ObservableObject {
         AppLogStore.shared.info(.spider, "[SpiderManager] ✅ Node 蜘蛛注册: \(site.name) (\(key)) → nodeKey=\(nodeKey)")
     }
 
-    /// vbox 站点 key → Node 系统内蜘蛛 key（去掉 nodejs_/csp_ 前缀）
+    /// vbox 站点 key → Node 系统内蜘蛛 key（去前缀 + 订阅源 key 归一化，与 NodeSpiderEngine 一致）
     private func engineNodeKey(_ key: String) -> String {
-        var result = key
-        for prefix in ["nodejs_", "csp_"] where result.hasPrefix(prefix) {
-            result = String(result.dropFirst(prefix.count))
-            break
-        }
-        return result
+        NodeSpiderEngine.normalizeNodeKey(key)
     }
 
     // MARK: - 兜底源管理
