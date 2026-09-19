@@ -38,7 +38,12 @@ struct NodeLoginAPIClient {
         }
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         if let code = json["code"] as? Int, code != 0 {
-            throw NodeLoginError.nodeRejected(json["msg"] as? String ?? "code=\(code)")
+            let msg = json["msg"] as? String ?? "code=\(code)"
+            // bundle Kee.poll 对任务丢失/过期返回 terminal=true，属不可重试的终端状态
+            if (json["terminal"] as? Bool) == true {
+                throw NodeLoginError.terminal(msg)
+            }
+            throw NodeLoginError.nodeRejected(msg)
         }
         return json
     }
@@ -72,6 +77,9 @@ enum NodeLoginError: LocalizedError {
     case nodeNotReady
     case httpStatus(Int)
     case nodeRejected(String)
+    /// Node 侧明确返回终端状态（terminal=true，如"登录任务不存在或已结束"）：
+    /// 轮询必须停止，不可当作瞬时错误重试
+    case terminal(String)
     case unknown
 
     var errorDescription: String? {
@@ -79,6 +87,7 @@ enum NodeLoginError: LocalizedError {
         case .nodeNotReady: return "Node 常驻系统未就绪"
         case .httpStatus(let code): return "HTTP \(code)"
         case .nodeRejected(let msg): return "Node 返回: \(msg)"
+        case .terminal(let msg): return "Node 返回: \(msg)"
         case .unknown: return "未知错误"
         }
     }
@@ -500,6 +509,24 @@ struct NodeScanQRLoginView: View {
     @State private var taskId: String? = nil
     @State private var timer: Timer? = nil
 
+    /// 轮询上下文（引用类型：SwiftUI View 值重建时保留计时/失败计数/并发标志）
+    private final class PollContext {
+        var startedAt = Date()
+        var consecutiveFailures = 0
+        var inFlight = false
+        /// 生成代数：每次 regenerate 自增，旧请求返回后结果直接丢弃
+        var generation = 0
+        /// 终端状态后自动重新生成的次数（限 1 次，防止引擎反复重启导致死循环）
+        var autoRegenCount = 0
+        var baseline = ""
+    }
+    @State private var pollCtx = PollContext()
+
+    /// 轮询总时长上限：与 Node 侧任务 TTL（300s）对齐，到点停止引导重新生成
+    private let pollTimeout: TimeInterval = 290
+    /// 连续网络失败上限（1.5s/次 × 6 ≈ 9s），超过停止避免无限"轮询中"
+    private let maxConsecutiveFailures = 6
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -595,6 +622,10 @@ struct NodeScanQRLoginView: View {
         timer = nil
         guard !isGenerating else { return }
         isGenerating = true
+        // 重置轮询状态：旧请求结果作废、失败计数清零、允许下一次自动重生成
+        pollCtx.generation += 1
+        pollCtx.inFlight = false
+        pollCtx.consecutiveFailures = 0
         errorText = ""
         statusText = "正在生成二维码..."
         defer { isGenerating = false }
@@ -619,33 +650,86 @@ struct NodeScanQRLoginView: View {
     private func startPolling(taskId: String) {
         guard taskId.isEmpty == false else { return }
         isPolling = true
+        pollCtx.startedAt = Date()
+        pollCtx.consecutiveFailures = 0
         timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
             Task { await poll(taskId: taskId) }
         }
     }
 
     private func poll(taskId: String) async {
+        // 并发护栏：上一次请求未返回时跳过本次（轮询超时 10s > 定时器 1.5s）
+        guard !pollCtx.inFlight else { return }
+        // 代数护栏：regenerate 后旧请求的结果直接丢弃
+        let gen = pollCtx.generation
+        pollCtx.inFlight = true
+        defer { pollCtx.inFlight = false }
+
+        // 总时长上限：与 Node 任务 TTL（300s）对齐，到点停止引导重新生成
+        if Date().timeIntervalSince(pollCtx.startedAt) >= pollTimeout {
+            stopPolling(status: "轮询超时", error: "二维码已过期，请重新生成")
+            return
+        }
+
         do {
-            let result = try await NodeLoginAPIClient.request("POST", "/website/api/login/poll", body: ["provider": provider, "taskId": taskId])
+            let result = try await NodeLoginAPIClient.request(
+                "POST", "/website/api/login/poll",
+                body: ["provider": provider, "taskId": taskId],
+                timeout: 10
+            )
+            guard gen == pollCtx.generation else { return }
+            pollCtx.consecutiveFailures = 0
             let status = result["status"] as? String ?? "waiting"
             let msg = result["msg"] as? String ?? ""
             switch status {
             case "success":
                 statusText = msg.isEmpty ? "登录成功" : msg
-                timer?.invalidate()
-                timer = nil
-                isPolling = false
+                stopPolling(status: statusText, error: "")
                 await finishSuccess()
             case "expired", "error":
-                statusText = msg.isEmpty ? "登录已过期或失败" : msg
-                timer?.invalidate()
-                timer = nil
-                isPolling = false
+                // 终端状态（code==0 + terminal=true）：任务已过期/结束
+                handleTerminal(msg.isEmpty ? "登录已过期或失败" : msg)
             default:
                 statusText = msg.isEmpty ? "等待扫码确认..." : msg
             }
+        } catch let NodeLoginError.terminal(msg) {
+            // Node 侧明确返回终端：任务不存在/已结束 → 停止轮询并引导重新生成
+            guard gen == pollCtx.generation else { return }
+            handleTerminal(msg)
         } catch {
-            statusText = "轮询中... (\(error.localizedDescription))"
+            // 网络层 / HTTP / Node 未就绪等瞬时错误：连续失败计数，达上限停止
+            guard gen == pollCtx.generation else { return }
+            pollCtx.consecutiveFailures += 1
+            if pollCtx.consecutiveFailures >= maxConsecutiveFailures {
+                stopPolling(status: "轮询失败", error: "网络连接已中断，请重新生成二维码")
+            } else {
+                statusText = "轮询中... (\(error.localizedDescription))"
+            }
+        }
+    }
+
+    /// 终端状态：停止轮询并展示原因；Node 重启导致任务丢失时自动重新生成一次
+    private func handleTerminal(_ msg: String) {
+        stopPolling(status: "登录已结束", error: msg)
+        pollCtx.autoRegenCount += 1
+        guard pollCtx.autoRegenCount <= 1 else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !isPolling else { return }
+            await regenerate()
+        }
+    }
+
+    /// 统一停止轮询并落状态
+    private func stopPolling(status: String, error: String) {
+        timer?.invalidate()
+        timer = nil
+        isPolling = false
+        statusText = status
+        if error.isEmpty {
+            errorText = ""
+        } else {
+            errorText = error
         }
     }
 
