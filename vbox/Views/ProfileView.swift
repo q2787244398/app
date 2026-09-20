@@ -790,21 +790,41 @@ struct LoginSheetView: View {
 
     private let gradientColors: [Color] = [Color(hex: "3B82F6"), Color(hex: "2563EB"), Color(hex: "1D4ED8")]
 
+    /// 读取当前软件图标（Info.plist CFBundleIcons 优先，兜底 AppIcon 资源）
+    private var appIconImage: UIImage? {
+        if let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String],
+           let name = files.last {
+            if let img = UIImage(named: name) { return img }
+        }
+        return UIImage(named: "AppIcon")
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 Spacer().frame(height: 12)
 
-                // App 图标
+                // App 图标（使用软件图标，读取失败时回退原渐变闪电样式）
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 72, height: 72)
-                        .shadow(color: Color(hex: "3B82F6").opacity(0.4), radius: 16, y: 6)
+                    if let appIcon = appIconImage {
+                        Image(uiImage: appIcon)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 72, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                            .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
+                    } else {
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 72, height: 72)
+                            .shadow(color: Color(hex: "3B82F6").opacity(0.4), radius: 16, y: 6)
 
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 30))
-                        .foregroundColor(.white)
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 30))
+                            .foregroundColor(.white)
+                    }
                 }
                 .padding(.bottom, 20)
 

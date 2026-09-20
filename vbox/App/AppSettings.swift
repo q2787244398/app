@@ -155,8 +155,8 @@ class AppSettings: ObservableObject {
     init() {
         let rawSkin = UserDefaults.standard.string(forKey: Self.skinModeKey)
         skinMode = AppSkinMode(rawValue: rawSkin ?? "") ?? .light
-        skinFollowsSystem = UserDefaults.standard.object(forKey: Self.skinFollowsSystemKey) as? Bool ?? false
-        enableTMDB = UserDefaults.standard.object(forKey: Self.enableTMDBKey) as? Bool ?? true
+        skinFollowsSystem = UserDefaults.standard.object(forKey: Self.skinFollowsSystemKey) as? Bool ?? true
+        enableTMDB = UserDefaults.standard.object(forKey: Self.enableTMDBKey) as? Bool ?? false
         tmdbProxyURL = UserDefaults.standard.string(forKey: Self.tmdbProxyURLKey) ?? ""
         tmdbUseToken = UserDefaults.standard.object(forKey: Self.tmdbUseTokenKey) as? Bool ?? false
         tmdbProxyToken = UserDefaults.standard.string(forKey: Self.tmdbProxyTokenKey) ?? ""

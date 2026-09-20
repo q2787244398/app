@@ -64,7 +64,14 @@ class TGSearchConfigStore: ObservableObject {
         TGChannel(name: "UC夸克资源", channelId: "ucquark"),
         TGChannel(name: "夸克分享", channelId: "quarkshare"),
         TGChannel(name: "阿里分享", channelId: "shareAliyun"),
-        TGChannel(name: "豆儿盘", channelId: "douerpan")
+        TGChannel(name: "豆儿盘", channelId: "douerpan"),
+        // 【新增 2026-09-20】常用网盘/影视 TG 频道（阿里频道 shareAliyun 已存在，跳过；123云盘按需移除）
+        TGChannel(name: "4K影视频道", channelId: "Aliyun_4K_Movies"),
+        TGChannel(name: "百度频道", channelId: "BaiduCloudDisk"),
+        TGChannel(name: "移动云盘", channelId: "yunpan139"),
+        TGChannel(name: "天翼云盘", channelId: "yunpan189"),
+        TGChannel(name: "UC云盘", channelId: "yunpanuc"),
+        TGChannel(name: "迅雷云盘", channelId: "yunpanxunlei")
     ]
 
     // MARK: - Init

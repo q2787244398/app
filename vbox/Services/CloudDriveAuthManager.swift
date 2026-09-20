@@ -3053,7 +3053,32 @@ final class CloudDriveAuthManager: ObservableObject {
         }
     }
 
+    // MARK: - 全新安装凭据清理（方案 A）
+    //
+    // iOS 卸载 App 不会清除其写入 Keychain 的条目，导致卸载重装后网盘 Token/授权仍残留。
+    // 用 UserDefaults 标记（卸载即清空）识别"全新安装"，首次启动时清空 Keychain 网盘凭据。
+    // 幂等：标记已存在（正常升级/重复调用）直接返回 false；仅操作 Keychain，不触碰内存状态，
+    // 可在 CloudDriveAuthManager 与 CloudDriveManager 两条加载路径安全调用（无初始化环路）。
+
+    private static let freshInstallMarkerKey = "com.vbox.clouddrive.credentials_initialized_v1"
+
+    @discardableResult
+    static func purgeKeychainIfFreshInstall() -> Bool {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: freshInstallMarkerKey) else { return false }
+        defaults.set(true, forKey: freshInstallMarkerKey)
+        SecureCredentialStore.deleteTokens()
+        SecureCredentialStore.deleteCredentials()
+        print("[Auth] 检测到全新安装，已清空 Keychain 网盘凭据（Token + 授权）")
+        return true
+    }
+
     private func load() {
+        // 方案 A：全新安装时清空 Keychain 网盘凭据，避免卸载重装后旧凭据残留
+        if purgeKeychainIfFreshInstall() {
+            credentials = [:]
+            return
+        }
         do {
             if let decoded = try SecureCredentialStore.loadCredentials() {
                 credentials = decoded

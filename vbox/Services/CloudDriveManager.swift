@@ -899,6 +899,13 @@ class CloudDriveManager: ObservableObject {
     }
 
     private func loadTokens() {
+        // 方案 A：全新安装（UserDefaults 标记为空）时清空 Keychain 网盘凭据，
+        // 避免 iOS 卸载重装后旧 Token/凭据残留导致授权页误显示"已获取"。
+        // 幂等，且仅操作 Keychain，不触发 CloudDriveAuthManager 单例初始化，无环路。
+        if CloudDriveAuthManager.purgeKeychainIfFreshInstall() {
+            savedTokens = []
+            return
+        }
         do {
             if let tokens = try SecureCredentialStore.loadTokens() {
                 savedTokens = tokens
