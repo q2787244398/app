@@ -7,9 +7,9 @@ import Foundation
 // 协议对齐（bundle kstore_index.js 内置 spiders，统一挂载 /spider/{key}/{type}）：
 //   - POST /spider/{nodeKey}/3/home         → {class:[], list:[...]}（HomeContentResult）
 //   - POST /spider/{nodeKey}/3/category     body {tid, pg, extend}
-//   - POST /spider/{nodeKey}/3/detail       body {ids}
+//   - POST /spider/{nodeKey}/3/detail       body {id, ids}（bundle 统一读 body.id，见下）
 //   - POST /spider/{nodeKey}/3/search       body {wd, pg}
-//   - POST /spider/{nodeKey}/3/player       body {ids, flag, url}
+//   - POST /spider/{nodeKey}/3/player       body {id, ids, flag, url}
 //   （参数与 bundle 蜘蛛协议对位，议题 18.6 已代码实证 ✅）
 //
 // key 映射：vbox 站点 key（nodejs_xxx / csp_xxx）→ Node 系统内蜘蛛 key（xxx），
@@ -123,7 +123,9 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
     }
 
     func callDetailContent(ids: String) throws -> DetailContentResult {
-        try perform("detail", params: ["ids": ids])
+        // bundle 蜘蛛 detail 统一读 body.id（kstore_index.js 258 处 body?.id / body.id，
+        // 0 处读 ids）；同时携带 ids 兼容未来读取多数的实现。
+        try perform("detail", params: ["id": ids, "ids": ids])
     }
 
     func callSearchContent(keyword: String, pg: Int) throws -> SearchContentResult {
@@ -131,7 +133,8 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
     }
 
     func callPlayerContent(vodId: String, flag: String, url: String) throws -> PlayerContentResult {
-        try perform("player", params: ["ids": vodId, "flag": flag, "url": url])
+        // 同上：bundle play 读 body.id（Od: String(w.body?.id)，AppV7: String(c.id)）
+        try perform("player", params: ["id": vodId, "ids": vodId, "flag": flag, "url": url])
     }
 
     // MARK: - 桥接实现（同步等待，35s 超时兜底）
@@ -145,8 +148,12 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
         }
 
         let base = NodeRuntimeManager.shared.baseURL
-        guard let url = URL(string: "\(base)/spider/\(nodeKey)/3/\(action)") else {
-            let msg = "桥接蜘蛛 \(siteKey) 生成无效 URL: \(base)/spider/\(nodeKey)/3/\(action)"
+        // 中文源 key（少儿教育/小学课堂/初中课堂/高中教育）必须百分号编码，
+        // 否则 URL(string:) 对非 ASCII 返回 nil → 桥接恒失败（HTTP 400/无效 URL）
+        let path = "/spider/\(nodeKey)/3/\(action)"
+        let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        guard let url = URL(string: "\(base)\(encodedPath)") else {
+            let msg = "桥接蜘蛛 \(siteKey) 生成无效 URL: \(base)\(path)"
             onLog?("❌ \(msg)")
             AppLogStore.shared.error(.spider, "[NodeSpiderEngine] \(msg)")
             throw NodeSpiderError.bridge("无效 URL")
