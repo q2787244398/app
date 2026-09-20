@@ -3075,7 +3075,7 @@ final class CloudDriveAuthManager: ObservableObject {
 
     private func load() {
         // 方案 A：全新安装时清空 Keychain 网盘凭据，避免卸载重装后旧凭据残留
-        if purgeKeychainIfFreshInstall() {
+        if Self.purgeKeychainIfFreshInstall() {
             credentials = [:]
             return
         }
