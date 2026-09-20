@@ -485,6 +485,30 @@ globalThis.__JS_SPIDER__ = _spider;
             AppLogStore.shared.info(.spider, "[SpiderManager] 🔄 清除 \(pyKeys.count) 个旧 Python 引擎，准备重新加载")
         }
 
+        // ★ 清除远程默认源残留引擎（JS/Node 蜘蛛）：
+        //   关闭"启用远程默认源"开关后 loadSitesFromSubscription 不再加载远程源站点，
+        //   但已注册的 JS/Node 蜘蛛引擎仍留在 engines 中，首页 loadHomeData 遍历 engines
+        //   取数时远程默认源资源会继续显示。此处仅在开关关闭时按远程源站点 key 精准清除
+        //   （缓存数据与开关状态无关，关闭后仍可读取用于识别），订阅源引擎不受影响；
+        //   开关开启时不清理，保持原重载行为。
+        if !RemoteSourceConfigManager.shared.remoteDefaultSourceEnabled {
+            let remoteSiteKeys = Set(
+                RemoteSourceConfigManager.shared.cachedAPISites().map { $0.key } +
+                RemoteSourceConfigManager.shared.cachedSpiderSites().map { $0.key }
+            )
+            let staleRemoteKeys = engines.keys.filter { remoteSiteKeys.contains($0) }
+            for key in staleRemoteKeys {
+                engines.removeValue(forKey: key)
+                if let idx = subscribedSites.firstIndex(of: key) {
+                    subscribedSites.remove(at: idx)
+                }
+                engineTypes.removeValue(forKey: key)
+            }
+            if !staleRemoteKeys.isEmpty {
+                AppLogStore.shared.info(.spider, "[SpiderManager] 🔄 清除 \(staleRemoteKeys.count) 个远程默认源引擎（开关已关闭）")
+            }
+        }
+
         if let activeURL = subManager.activeURL {
             await subManager.loadConfig(from: activeURL)
             if let error = subManager.errorMessage {
@@ -2486,9 +2510,18 @@ globalThis.__JS_SPIDER__ = _spider;
         db.clearSubscription(url: url)
         print("[SpiderManager] 已清除订阅源 \(url.prefix(60)) 的数据库记录")
 
-        // 彻底清空 SpiderManager 的站点数据
+        // ★ 同步清空该订阅源贡献的全部引擎与站点缓存（对齐 switchToSubscription 的清理逻辑）：
+        //   首页 loadHomeData / nativeSearch 遍历 engines 取数，若残留旧引擎则已删除订阅源的
+        //   资源仍会显示；同时清掉分类缓存与订阅站点标记，重建时一并刷新。
+        //   仅影响该订阅源数据；内置源/远程默认源/收藏历史等其它数据不受影响。
+        engines.removeAll()
+        subscribedSites.removeAll()
+        engineTypes.removeAll()
         allSites = []
         loadedSiteCount = 0
+        categories = []
+        print("[SpiderManager] 已清空订阅源相关引擎/站点缓存，准备重建剩余源")
+
         // 清除残留数据：重新加载剩下的订阅源
         Task { [self] in
             // 重新加载剩下的订阅源（如果有的话）

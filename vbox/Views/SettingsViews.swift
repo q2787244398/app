@@ -547,22 +547,25 @@ struct SettingsView: View {
                             )
                     }
 
-                    HStack {
-                        Image(systemName: "shippingbox.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(Color(hex: "F59E0B"))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("启用 Bundle 内置源")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(.primary)
-                            Text("关闭后跳过 ibox/video 内置 JSON 和硬编码兜底源")
-                                .font(.system(size: 11))
-                                .foregroundColor(.gray)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $settings.bundleSourcesEnabled)
-                            .labelsHidden()
-                    }
+                    // 【隐藏 2026-09-20】"启用 Bundle 内置源"开关暂时从设置页隐藏。
+                    // 逻辑保留（settings.bundleSourcesEnabled / RemoteSourceConfigManager），
+                    // 需要恢复时取消下方 HStack 的注释即可。
+                    // HStack {
+                    //     Image(systemName: "shippingbox.fill")
+                    //         .font(.system(size: 16))
+                    //         .foregroundColor(Color(hex: "F59E0B"))
+                    //     VStack(alignment: .leading, spacing: 2) {
+                    //         Text("启用 Bundle 内置源")
+                    //             .font(.system(size: 15, weight: .medium))
+                    //             .foregroundColor(.primary)
+                    //         Text("关闭后跳过 ibox/video 内置 JSON 和硬编码兜底源")
+                    //             .font(.system(size: 11))
+                    //             .foregroundColor(.gray)
+                    //     }
+                    //     Spacer()
+                    //     Toggle("", isOn: $settings.bundleSourcesEnabled)
+                    //         .labelsHidden()
+                    // }
 
                     HStack(spacing: 10) {
                         Button {
