@@ -140,11 +140,27 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
     // MARK: - 桥接实现（同步等待，35s 超时兜底）
 
     private func perform<T: Decodable>(_ action: String, params: [String: Any]?) throws -> T {
-        guard NodeRuntimeManager.shared.isSystemReady else {
-            let msg = "Node 常驻系统未就绪，无法桥接蜘蛛 \(siteKey) (action=\(action))"
-            onLog?("❌ \(msg)")
-            AppLogStore.shared.error(.spider, "[NodeSpiderEngine] \(msg)")
-            throw NodeSpiderError.systemNotReady
+        // 🔧 修复: Node 未就绪时先限时等待，而不是立即抛错。
+        // App 启动时 Node 常驻系统初始化需要数秒（部署文件→启动引擎→ack→HTTP 探活），
+        // 此前首页/分类并发加载 97 个引擎时几乎全部命中未就绪 → 分类数据大面积缺失。
+        // 后台线程轮询等待（最多 20s）；主线程不等待，避免阻塞 UI。
+        if !NodeRuntimeManager.shared.isSystemReady {
+            if Thread.isMainThread {
+                let msg = "Node 常驻系统未就绪，无法桥接蜘蛛 \(siteKey) (action=\(action))"
+                onLog?("❌ \(msg)")
+                AppLogStore.shared.error(.spider, "[NodeSpiderEngine] \(msg)")
+                throw NodeSpiderError.systemNotReady
+            }
+            let waitDeadline = Date().addingTimeInterval(20)
+            while !NodeRuntimeManager.shared.isSystemReady && Date() < waitDeadline {
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+            if !NodeRuntimeManager.shared.isSystemReady {
+                let msg = "Node 常驻系统等待 20s 仍未就绪，无法桥接蜘蛛 \(siteKey) (action=\(action))"
+                onLog?("❌ \(msg)")
+                AppLogStore.shared.error(.spider, "[NodeSpiderEngine] \(msg)")
+                throw NodeSpiderError.systemNotReady
+            }
         }
 
         let base = NodeRuntimeManager.shared.baseURL

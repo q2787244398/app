@@ -12,3 +12,8 @@ __pycache__/
 # 阶段3+阶段4 临时备份目录（不推送）
 dead-code-review-step4/
 dead-code-review-step6/
+
+# Node 运行时握手/状态文件（运行产物，不入库）
+vbox/Resources/noderuntime/.startup.ack
+vbox/Resources/noderuntime/.relisten
+vbox/Resources/noderuntime/.relisten.ack

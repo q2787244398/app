@@ -1624,7 +1624,29 @@ globalThis.__JS_SPIDER__ = _spider;
         return script
     }
 
+    /// 🔧 等待 Node 常驻系统就绪（最多 20s，非阻塞轮询）。
+    /// 仅当存在 Node 引擎且 Node 未就绪时才等待，其它源零开销。
+    /// App 启动时 Node 初始化需要数秒，此前首页/分类并发加载 Node 引擎
+    /// 全部命中"未就绪"→ 分类数据大面积缺失，等待后即可正常加载。
+    private func waitForNodeReadyIfNeeded() async {
+        let hasNodeEngine = engines.values.contains { $0 is NodeSpiderEngine }
+        guard hasNodeEngine, !NodeRuntimeManager.shared.isSystemReady else { return }
+        let deadline = Date().addingTimeInterval(20)
+        while !NodeRuntimeManager.shared.isSystemReady && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
+        }
+        if NodeRuntimeManager.shared.isSystemReady {
+            AppLogStore.shared.info(.spider, "[SpiderManager] ✅ Node 常驻系统已就绪，继续加载")
+        } else {
+            AppLogStore.shared.warn(.spider, "[SpiderManager] ⚠️ Node 常驻系统等待 20s 未就绪")
+        }
+    }
+
     func loadHomeData() async {
+        // 🔧 修复: 先等待 Node 常驻系统就绪（最多 20s），避免启动时 97 个 Node 引擎
+        // 全部命中"未就绪"导致分类数据大面积缺失。非阻塞轮询，不卡主线程。
+        await waitForNodeReadyIfNeeded()
+
         var videos: [VodItem] = []
 
         AppLogStore.shared.info(.spider, "[SpiderManager] 🏠 ========== 开始加载首页数据 ==========")
@@ -1786,6 +1808,9 @@ globalThis.__JS_SPIDER__ = _spider;
     ///   - page: 页码
     ///   - filters: 多维筛选参数（类型/地区/年份/排序），全部为 nil 时等价于原方法
     func fetchCategoryContent(categoryTypeId: String, page: Int = 1, filters: CategoryFilterParams? = nil) async -> [VodItem] {
+        // 🔧 修复: 分类加载前等待 Node 常驻系统就绪，避免启动时并发分类请求全部命中"未就绪"
+        await waitForNodeReadyIfNeeded()
+
         // 先尝试蜘蛛引擎的 categoryContent
         var results: [VodItem] = []
 
@@ -2012,6 +2037,8 @@ globalThis.__JS_SPIDER__ = _spider;
                 print("[SpiderManager] jsSpiderCategory[\(source.name)] 引擎未找到: engineKey=\(source.engineKey ?? "nil")")
                 return []
             }
+            // 🔧 修复: 单源分类加载前等待 Node 常驻系统就绪，避免切换源时分类数据为空
+            await waitForNodeReadyIfNeeded()
             do {
                 print("[SpiderManager] jsSpiderCategory[\(source.name)] 请求分类: tid=\(categoryTypeId), pg=\(page)")
                 let result = try engine.callCategoryContent(tid: categoryTypeId, pg: page, extend: "{}")
@@ -5289,6 +5316,9 @@ globalThis.__JS_SPIDER__ = _spider;
     /// JS 蜘蛛的 home
     private func fetchJSSpiderHomeData(source: SourceDisplayItem) async -> SourceHomeData? {
         guard let key = source.engineKey, let engine = engines[key] else { return nil }
+
+        // 🔧 修复: Node 引擎等待就绪，避免切换源分类页时 Node 未就绪导致首页/分类数据为空
+        await waitForNodeReadyIfNeeded()
 
         do {
             let result = try engine.callHomeContent()

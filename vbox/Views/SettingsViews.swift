@@ -74,7 +74,14 @@ struct SettingsView: View {
         }
         .onChange(of: settings.remoteDefaultSourceEnabled) { newValue in
             Task {
-                if newValue { await remoteSourceManager.syncNow() }
+                if newValue {
+                    await remoteSourceManager.syncNow()
+                } else {
+                    // 🔧 修复: 关闭"启用远程默认源"时同步清理福利专区远程平台缓存（内存+磁盘），
+                    // 并将福利远程源开关置回关闭，福利专区回到内置资源版本，避免远程福利平台残留。
+                    WelfarePlatformConfigStore.shared.clearAllCache()
+                    WelfarePlatformConfigStore.shared.switchEnabled = false
+                }
                 await spiderManager.reloadAllSources()
             }
         }
@@ -115,7 +122,10 @@ struct SettingsView: View {
             fallbackSection
             zhanyuanSiteSection
             cloudDriveSection
-            playbackTestToolsSection
+            // 【隐藏 2026-09-20】"播放测试"入口从设置页隐藏（含播放测试工具/通用播放/MPV调试等）。
+            // 逻辑保留（playbackTestToolsSection / PlaybackTestToolsView / 各调试 View），
+            // 需要恢复时取消下方一行注释即可。
+            // playbackTestToolsSection
             storageSection
             developerSection
             aboutSection
@@ -585,6 +595,10 @@ struct SettingsView: View {
 
                         Button(role: .destructive) {
                             remoteSourceManager.clearCache()
+                            // 🔧 修复: 清缓存时同步清理福利专区远程平台缓存（内存+磁盘），
+                            // 福利远程源开关置回关闭，福利专区回到内置资源版本，避免远程福利平台残留。
+                            WelfarePlatformConfigStore.shared.clearAllCache()
+                            WelfarePlatformConfigStore.shared.switchEnabled = false
                             Task {
                                 await spiderManager.reloadAllSources()
                                 remoteSourceManager.refreshLoadState()
@@ -687,46 +701,48 @@ struct SettingsView: View {
         }
     }
 
-    private var playbackTestToolsSection: some View {
-        SettingsSection(title: "播放测试") {
-            Button(action: { showPlaybackTestTools = true }) {
-                HStack {
-                    Image(systemName: "play.rectangle.on.rectangle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(Color(hex: "E11D48"))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("播放测试工具")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.primary)
-                        Text("统一管理通用播放、MPV、RenderContext、百度网盘测试")
-                            .font(.system(size: 11))
-                            .foregroundColor(.gray)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(Color.gray.opacity(0.04))
-            }
-            .padding(16)
-        }
-        .sheet(isPresented: $showPlaybackTestTools) {
-            PlaybackTestToolsView(
-                showUniversalPlayTestView: $showUniversalPlayTestView,
-                showMPVKitDebugView: $showMPVKitDebugView,
-                showMPVRenderContextDebugView: $showMPVRenderContextDebugView,
-                showLibmpvMoltenVKDebugView: $showLibmpvMoltenVKDebugView,
-                showBaiduTestView: $showBaiduTestView,
-                showMPVAdvancedDiagnostics: $showMPVAdvancedDiagnostics
-            )
-        }
-        .sheet(isPresented: $showMPVAdvancedDiagnostics) {
-            mpvAdvancedDiagnosticsView
-        }
-    }
+    // 【隐藏 2026-09-20】"播放测试"区块整体注释，入口已从设置页移除。
+    // 需要恢复时取消本注释块，并在 settingsContent 中取消 playbackTestToolsSection 的注释。
+    // private var playbackTestToolsSection: some View {
+    //     SettingsSection(title: "播放测试") {
+    //         Button(action: { showPlaybackTestTools = true }) {
+    //             HStack {
+    //                 Image(systemName: "play.rectangle.on.rectangle.fill")
+    //                     .font(.system(size: 16))
+    //                     .foregroundColor(Color(hex: "E11D48"))
+    //                 VStack(alignment: .leading, spacing: 2) {
+    //                     Text("播放测试工具")
+    //                         .font(.system(size: 15, weight: .medium))
+    //                         .foregroundColor(.primary)
+    //                     Text("统一管理通用播放、MPV、RenderContext、百度网盘测试")
+    //                         .font(.system(size: 11))
+    //                         .foregroundColor(.gray)
+    //                 }
+    //                 Spacer()
+    //                 Image(systemName: "chevron.right")
+    //                     .font(.system(size: 12))
+    //                     .foregroundColor(.gray)
+    //             }
+    //             .padding(.horizontal, 16)
+    //             .padding(.vertical, 14)
+    //             .background(Color.gray.opacity(0.04))
+    //         }
+    //         .padding(16)
+    //     }
+    //     .sheet(isPresented: $showPlaybackTestTools) {
+    //         PlaybackTestToolsView(
+    //             showUniversalPlayTestView: $showUniversalPlayTestView,
+    //             showMPVKitDebugView: $showMPVKitDebugView,
+    //             showMPVRenderContextDebugView: $showMPVRenderContextDebugView,
+    //             showLibmpvMoltenVKDebugView: $showLibmpvMoltenVKDebugView,
+    //             showBaiduTestView: $showBaiduTestView,
+    //             showMPVAdvancedDiagnostics: $showMPVAdvancedDiagnostics
+    //         )
+    //     }
+    //     .sheet(isPresented: $showMPVAdvancedDiagnostics) {
+    //         mpvAdvancedDiagnosticsView
+    //     }
+    // }
 
     private func driveTokenRow(index: Int, token: DriveToken) -> some View {
         HStack {

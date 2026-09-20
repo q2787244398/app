@@ -4861,6 +4861,8 @@ class PlayerState: ObservableObject {
         }
         // 清理空白字符
         b64 = b64.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 保留原始 playID（去 $ 前缀、无 padding），用于 Node 网盘桥接时按 playID 精确定位文件
+        let rawPlayID = b64
         // 补全 base64 padding
         let pad = (4 - b64.count % 4) % 4
         if pad > 0 {
@@ -4879,7 +4881,16 @@ class PlayerState: ObservableObject {
             return nil
         }
         let url = String(describing: jsonObj["url"] ?? "")
-        guard !url.isEmpty else {
+        if url.isEmpty {
+            // 🔧 修复: Node 蜘蛛（push/jutou 等）返回网盘协议 JSON 时没有 url 字段，
+            // 而是 {"providerId":"quark","shareId":"...","fileId":"...","playToken":"...","mode":"..."}。
+            // 原来直接判死 → 播放失败。这里桥接成标准网盘分享 URL（带 vbox_node/vbox_fid fragment），
+            // 上层 handlePlayUrl 递归时会命中既有云盘检测分支，走 handleDriveUrl → handleNodeManagedDrive
+            // （A1 接缝 /spider/push/4/*），与仓库远程源网盘播放链路完全一致，不影响其它源。
+            if let bridged = Self.bridgeNodePanJSON(jsonObj, rawPlayID: rawPlayID) {
+                log("[PlayerV2] ✅ Node 网盘协议 JSON 桥接成功: \(bridged.url.prefix(80))")
+                return bridged
+            }
             log("[PlayerV2] JSON 中 url 字段为空: \(jsonStr.prefix(60))")
             return nil
         }
@@ -4898,6 +4909,86 @@ class PlayerState: ObservableObject {
             headers["User-Agent"] = ag
         }
         return (result, headers)
+    }
+
+    /// 🔧 Node 网盘协议 JSON → 标准网盘分享链接桥接
+    ///
+    /// Node 蜘蛛（push/jutou 等）play 返回的 base64 JSON 没有 url 字段，而是：
+    ///   {"providerId":"quark|thunder|pan115|...","shareId":"...","fileId":"...","name":"...","playToken":"...","mode":"..."}
+    /// 这是 push spider 的 playID 载荷。桥接策略：
+    ///   - Node 托管盘（迅雷/115/123/139/189/光鸭/蜗牛）：构造成分享链接 + `#vbox_node=<原始playID>`，
+    ///     走 handleDriveUrl → handleNodeManagedDrive（A1 接缝 /spider/push/4/*），按 playID 精确定位文件；
+    ///   - 原生盘（夸克/百度/UC/阿里）：构造成分享链接 + `#vbox_fid=<fileId>`，
+    ///     走既有原生 Token 路链（夸克/百度/阿里用 fid 定位文件）；
+    ///   - 未知 providerId 返回 nil（保持原判死行为，不改变其它源逻辑）。
+    private static func bridgeNodePanJSON(_ json: [String: Any], rawPlayID: String) -> (url: String, headers: [String: String])? {
+        guard let providerId = json["providerId"] as? String,
+              let shareId = json["shareId"] as? String,
+              !providerId.isEmpty, !shareId.isEmpty else {
+            return nil
+        }
+        let fileId = (json["fileId"] as? String) ?? ""
+        let lower = providerId.lowercased()
+        let shareURL: String
+        let nodeManaged: Bool
+        switch lower {
+        case "quark":
+            shareURL = "https://pan.quark.cn/s/\(shareId)"
+            nodeManaged = false
+        case "thunder", "xunlei":
+            shareURL = "https://pan.xunlei.com/s/\(shareId)"
+            nodeManaged = true
+        case "pan115", "one15":
+            shareURL = "https://115.com/s/\(shareId)"
+            nodeManaged = true
+        case "pan123":
+            shareURL = "https://www.123pan.com/s/\(shareId)"
+            nodeManaged = true
+        case "pan189", "189":
+            shareURL = "https://cloud.189.cn/t/\(shareId)"
+            nodeManaged = true
+        case "new139", "139", "pan139":
+            shareURL = "https://yun.139.com/s/\(shareId)"
+            nodeManaged = true
+        case "guangya":
+            shareURL = "https://guangyapan.com/s/\(shareId)"
+            nodeManaged = true
+        case "woniu4k", "woniu":
+            shareURL = "https://woniu4k.com/s/\(shareId)"
+            nodeManaged = true
+        case "baidu":
+            shareURL = "https://pan.baidu.com/s/1\(shareId)"
+            nodeManaged = false
+        case "uc":
+            shareURL = "https://drive.uc.cn/s/\(shareId)"
+            nodeManaged = false
+        case "ali", "aliyun", "alipan":
+            shareURL = "https://www.alipan.com/s/\(shareId)"
+            nodeManaged = false
+        default:
+            return nil
+        }
+        // Node 托管盘：vbox_node=原始 playID（精确匹配文件列表条目）；
+        // 原生盘：vbox_fid=fileId（夸克/百度/阿里用 fid 定位用户点击的集数）
+        // playID/fileId 可能含 base64 特殊字符（+/=），percent-encoding 后放入 fragment，
+        // splitVboxFragment 会 removingPercentEncoding 还原，与 Node 侧返回的原始值一致
+        let encodedPlayID = rawPlayID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? rawPlayID
+        let encodedFileID = fileId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? fileId
+        let fragment: String
+        if nodeManaged, !rawPlayID.isEmpty {
+            fragment = "vbox_node=\(encodedPlayID)"
+        } else if !fileId.isEmpty {
+            fragment = "vbox_fid=\(encodedFileID)"
+        } else {
+            fragment = ""
+        }
+        let finalURL = fragment.isEmpty ? shareURL : "\(shareURL)#\(fragment)"
+        // 透传 Node 返回的 UA
+        var headers: [String: String] = [:]
+        if let ag = json["ag"] as? String, !ag.isEmpty {
+            headers["User-Agent"] = ag
+        }
+        return (finalURL, headers)
     }
     
     /// 从 URL 字符串中提取域名
@@ -5024,7 +5115,9 @@ class PlayerState: ObservableObject {
         // 云盘链接无法通过解析器/playerContent/nativeDetail 处理，直接由云盘 API 解析，失败即报错
         if let driveType = CloudDriveManager.detectDrive(from: urlString) {
             let tokens = CloudDriveManager.shared.tokens(for: driveType)
-            if tokens.isEmpty {
+            // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛）由 Node 常驻系统解析，
+            // 不依赖本地 Token，与 handleCloudVideo 的判定保持一致
+            if tokens.isEmpty && !CloudDriveManager.isNodeManagedDrive(driveType) {
                 let msg = "未配置\(driveType.displayName) Token，请到 设置→网盘播放 中添加"
                 log("[PlayerV2] ❌ \(msg)")
                 await MainActor.run { self.failPlayback(msg) }
