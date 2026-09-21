@@ -22,6 +22,7 @@
 		0D1E865FB508DE73B04C17AC /* PlatformAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 424FDF0E29EDDCE590D85773 /* PlatformAsyncImage.swift */; };
 		0DF46A26D5F7B01AF24963C9 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D650B79936B1892EE6020F2 /* GoProxyManager.swift */; };
 		0F4C8023B959F3952534D519 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD19E95A2957972971FA1DB8 /* GoProxyManager.swift */; };
+		1064A487D8C7020D228711E7 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0EA2EFDC2249D9467591A9C /* GoProxyManager.swift */; };
 		111921984B8291A062F394E4 /* Libharfbuzz.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03F4D127BE463286B5D12AA8 /* Libharfbuzz.xcframework */; settings = {ATTRIBUTES = (Required, ); }; };
 		11FFC77DC15A70173DBE12E5 /* Libfreetype.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = D0F468EC9922AFBBB856E9DB /* Libfreetype.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		12A1AC8CFD69FC77D785A754 /* Libass.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 9353A6CB751B12B08CDC9742 /* Libass.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -607,6 +608,7 @@
 		AB4AB6020CDCCB8ACDFA310B /* libc++.tbd */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = "libc++.tbd"; path = "usr/lib/libc++.tbd"; sourceTree = SDKROOT; };
 		AE18719058C97F4EF082F120 /* SourceDisplayItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDisplayItem.swift; sourceTree = "<group>"; };
 		AFC91A90E8DDD26C7B6E001A /* WelfareDomainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelfareDomainStore.swift; sourceTree = "<group>"; };
+		B0EA2EFDC2249D9467591A9C /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		B0F74E8951368DECD8322237 /* Libbluray.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = Libbluray.xcframework; path = vbox/Libraries/MPV/MPVKitDependencies/Libbluray.xcframework; sourceTree = SOURCE_ROOT; };
 		B10001 /* VBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VBoxApp.swift; sourceTree = "<group>"; };
 		B10002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -1397,6 +1399,7 @@
 				B0D437755FD89F9AD7C74C98 /* Bridge */,
 				131A46E19613F02B502E24BB /* Bridge */,
 				76D081CF6C236B51A01C6F75 /* Bridge */,
+				BF08B190E70E34159B5FF1C0 /* Bridge */,
 			);
 			name = vbox;
 			sourceTree = "<group>";
@@ -1769,6 +1772,15 @@
 			isa = PBXGroup;
 			children = (
 				A9768949D5DB7115D4A67706 /* GoProxyManager.swift */,
+			);
+			name = Bridge;
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		BF08B190E70E34159B5FF1C0 /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				B0EA2EFDC2249D9467591A9C /* GoProxyManager.swift */,
 			);
 			name = Bridge;
 			path = Bridge;
@@ -2676,6 +2688,7 @@
 				292CAA9F3FD28E7384F36A13 /* GoProxyManager.swift in Sources */,
 				BBD3DF8435AD6972E7D5E635 /* GoProxyManager.swift in Sources */,
 				8E2C2080709B57B82BA29D1F /* GoProxyManager.swift in Sources */,
+				1064A487D8C7020D228711E7 /* GoProxyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
