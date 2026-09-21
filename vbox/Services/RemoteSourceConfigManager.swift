@@ -233,6 +233,12 @@ final class RemoteSourceConfigManager: ObservableObject {
         loadCachedManifestState()
     }
 
+    /// 探测远程源最新配置版本（供备份还原判断备份缓存是否过期）
+    /// 返回 nil 表示探测失败（无网络等），由调用方决定降级策略
+    func probeLatestConfigVersion() async -> String? {
+        await checkManifestVersion()
+    }
+
     // MARK: - 缓存读取（全部从 all_sources.json 读取）
 
     private func cachedAllSources() -> AllSourcesContainer? {

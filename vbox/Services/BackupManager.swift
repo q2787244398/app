@@ -13,6 +13,7 @@ enum BackupCategory: String, CaseIterable, Identifiable {
     case subscriptions
     case siteConfigs
     case personalSettings
+    case remoteSources
     case searchHistory
     case cloudCredentials
 
@@ -26,6 +27,7 @@ enum BackupCategory: String, CaseIterable, Identifiable {
         case .subscriptions: return "订阅源"
         case .siteConfigs: return "站点配置"
         case .personalSettings: return "个人设置"
+        case .remoteSources: return "远程源配置"
         case .searchHistory: return "搜索历史"
         case .cloudCredentials: return "网盘凭据"
         }
@@ -39,6 +41,7 @@ enum BackupCategory: String, CaseIterable, Identifiable {
         case .subscriptions: return "订阅的源地址列表"
         case .siteConfigs: return "站点、解析设置等配置"
         case .personalSettings: return "用户名、头像、外观、TMDB 等（福利数据需口令备份）"
+        case .remoteSources: return "远程源缓存配置，还原时若检测到新版本则自动跳过"
         case .searchHistory: return "搜索关键词记录"
         case .cloudCredentials: return "网盘授权令牌，敏感数据，默认关闭"
         }
@@ -52,6 +55,7 @@ enum BackupCategory: String, CaseIterable, Identifiable {
         case .subscriptions: return "link"
         case .siteConfigs: return "globe"
         case .personalSettings: return "person.crop.circle"
+        case .remoteSources: return "arrow.triangle.2.circlepath"
         case .searchHistory: return "magnifyingglass"
         case .cloudCredentials: return "lock.shield.fill"
         }
@@ -125,6 +129,14 @@ struct CredentialsSnapshot: Codable {
     var tokens: [DriveToken]
 }
 
+/// 远程源缓存快照（manifest + all_sources + JS 蜘蛛引擎缓存；version 用于还原时的新旧判断）
+struct RemoteSourcesSnapshot: Codable {
+    var version: String
+    var manifest: Data?
+    var allSources: Data?
+    var spiderJS: [String: Data]
+}
+
 // MARK: - 错误与结果
 
 enum BackupError: LocalizedError {
@@ -148,12 +160,16 @@ enum BackupError: LocalizedError {
 struct BackupRestoreResult {
     var restored: [BackupCategory]
     var skippedCredentialAccountMismatch: Bool
+    var skippedRemoteSourcesOutdated: Bool
     var totalCounts: [BackupCategory: Int]
 
     var summary: String {
         var lines = restored.map { "\($0.title)：\(totalCounts[$0] ?? 0) 条" }
         if skippedCredentialAccountMismatch {
             lines.append("网盘凭据：备份账号与当前账号不一致，已跳过")
+        }
+        if skippedRemoteSourcesOutdated {
+            lines.append("远程源配置：检测到远程源已有新版本，已跳过还原旧缓存")
         }
         return lines.joined(separator: "\n")
     }
@@ -187,6 +203,10 @@ final class BackupManager {
         ("app_tmdb_proxy_token", .string, false),
         ("app_dev_log_enabled", .bool, false),
         ("app_dev_log_level", .int, false),
+        // 远程源用户偏好（仅偏好本身；缓存文件与同步状态不备份，还原后强制拉取最新配置）
+        ("remote_default_source_enabled", .bool, false),
+        ("bundle_sources_enabled", .bool, false),
+        ("remote_default_manifest_url", .string, false),
         // 福利数据：需口令保护，仅加密备份包含
         ("app_welfare_unlocked", .bool, true),
         ("app_welfare_password", .string, true),
@@ -263,6 +283,8 @@ final class BackupManager {
             ))
         case .personalSettings:
             return try JSONEncoder().encode(collectPersonalSettings(includeWelfare: includeWelfare))
+        case .remoteSources:
+            return try JSONEncoder().encode(collectRemoteSources())
         case .searchHistory:
             return try JSONEncoder().encode(DatabaseManager.shared.querySearchHistory(limit: 100))
         case .cloudCredentials:
@@ -270,6 +292,35 @@ final class BackupManager {
             let tokens = (try? SecureCredentialStore.loadTokens()) ?? []
             return try JSONEncoder().encode(CredentialsSnapshot(credentials: credentials, tokens: tokens))
         }
+    }
+
+    private func collectRemoteSources() -> RemoteSourcesSnapshot {
+        let fm = FileManager.default
+        let mgr = RemoteSourceConfigManager.shared
+        let cacheDir = mgr.jsCacheDirectory.deletingLastPathComponent() // remote_sources/
+
+        func read(_ name: String) -> Data? {
+            let url = cacheDir.appendingPathComponent(name)
+            return fm.fileExists(atPath: url.path) ? try? Data(contentsOf: url) : nil
+        }
+
+        // 收集 JS 蜘蛛引擎缓存（js_cache/*.js）
+        var spiderJS: [String: Data] = [:]
+        let jsDir = mgr.jsCacheDirectory
+        if let files = try? fm.contentsOfDirectory(at: jsDir, includingPropertiesForKeys: nil) {
+            for file in files where file.pathExtension == "js" {
+                if let data = try? Data(contentsOf: file) {
+                    spiderJS[file.deletingPathExtension().lastPathComponent] = data
+                }
+            }
+        }
+
+        return RemoteSourcesSnapshot(
+            version: mgr.lastConfigVersion,
+            manifest: read("manifest.json"),
+            allSources: read("all_sources.json"),
+            spiderJS: spiderJS
+        )
     }
 
     private func collectPersonalSettings(includeWelfare: Bool) -> PersonalSettingsSnapshot {
@@ -405,7 +456,7 @@ final class BackupManager {
         let envelope = try parseEnvelope(data: backupData)
         let payload = try decodePayload(envelope: envelope, password: password)
 
-        var result = BackupRestoreResult(restored: [], skippedCredentialAccountMismatch: false, totalCounts: [:])
+        var result = BackupRestoreResult(restored: [], skippedCredentialAccountMismatch: false, skippedRemoteSourcesOutdated: false, totalCounts: [:])
 
         for category in categories {
             guard let raw = payload.categories[category.rawValue] else { continue }
@@ -414,6 +465,14 @@ final class BackupManager {
             if category == .cloudCredentials {
                 guard payload.account == currentAccount else {
                     result.skippedCredentialAccountMismatch = true
+                    continue
+                }
+            }
+
+            if category == .remoteSources {
+                // 远程源：检测到新版本则跳过（不写入 restored，避免误报还原了旧数据）
+                if try restoreRemoteSources(data: raw) == nil {
+                    result.skippedRemoteSourcesOutdated = true
                     continue
                 }
             }
@@ -521,6 +580,57 @@ final class BackupManager {
             CloudDriveManager.shared.reloadTokensFromKeychain()
             return snapshot.credentials.count + snapshot.tokens.count
         }
+    }
+
+    /// 还原远程源缓存：先探测远程源最新版本，若备份版本较旧则返回 nil（跳过，保留最新配置）；
+    /// 探测失败（离线等）时回退写入备份缓存，保证功能可用。
+    private func restoreRemoteSources(data: Data) throws -> Int? {
+        let snapshot = try JSONDecoder().decode(RemoteSourcesSnapshot.self, from: data)
+        let mgr = RemoteSourceConfigManager.shared
+
+        // 探测远程源最新版本（同步等待结果，避免还原期间状态不确定）
+        let latest: String? = {
+            let semaphore = DispatchSemaphore(value: 0)
+            var result: String?
+            Task { @MainActor in
+                result = await mgr.probeLatestConfigVersion()
+                semaphore.signal()
+            }
+            semaphore.wait()
+            return result
+        }()
+
+        // 检测到远程源已有更新版本 → 跳过还原旧缓存（App 会自动拉取最新配置）
+        if let latest, !latest.isEmpty, snapshot.version != latest {
+            print("[BackupManager] 远程源检测到新版本 \(latest)（备份为 \(snapshot.version)），跳过还原旧缓存")
+            return nil
+        }
+
+        // 写入备份的缓存配置
+        let fm = FileManager.default
+        let cacheDir = mgr.jsCacheDirectory.deletingLastPathComponent()
+        try? fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+
+        var restoredCount = 0
+        if let manifest = snapshot.manifest {
+            try? manifest.write(to: cacheDir.appendingPathComponent("manifest.json"), options: .atomic)
+            restoredCount += 1
+        }
+        if let allSources = snapshot.allSources {
+            try? allSources.write(to: cacheDir.appendingPathComponent("all_sources.json"), options: .atomic)
+            restoredCount += 1
+        }
+        if !snapshot.spiderJS.isEmpty {
+            let jsDir = mgr.jsCacheDirectory
+            try? fm.createDirectory(at: jsDir, withIntermediateDirectories: true)
+            for (key, js) in snapshot.spiderJS {
+                try? js.write(to: jsDir.appendingPathComponent("\(key).js"), options: .atomic)
+            }
+            restoredCount += snapshot.spiderJS.count
+        }
+
+        mgr.refreshLoadState()
+        return restoredCount
     }
 
     private func downloadExists(_ db: DatabaseManager, _ record: DownloadRecord) -> Bool {
