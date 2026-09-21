@@ -485,6 +485,11 @@ final class BackupManager {
                     result.skippedRemoteSourcesOutdated = true
                     continue
                 }
+                // 还原成功后重建站点列表，使备份中的远程源平台立刻显示出来。
+                // 仅写回缓存文件不会刷新 SpiderManager 内存中的 allSites/engines，
+                // 需调用 reloadAllSources 重建远端源引擎并通知 UI 刷新。
+                AppLogStore.shared.info(.spider, "[BackupManager] 远程源还原成功，重建站点列表")
+                await SpiderManager.shared.reloadAllSources()
             }
 
             let count = try restoreCategory(category, data: raw, strategy: strategy, wasEncrypted: envelope.encrypted)
