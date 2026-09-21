@@ -195,7 +195,7 @@
 		A10044 /* DBModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11001 /* DBModels.swift */; };
 		A10045 /* DatabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11002 /* DatabaseManager.swift */; };
 		A10046 /* ZhanyuanSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11003 /* ZhanyuanSearchService.swift */; };
-		A10047 /* BaiduWebViewBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* BaiduWebViewBridge.swift */; };
+		A10047 /* MusicPlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* MusicPlayerViews.swift */; };
 		A10126 /* ShortDramaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10126 /* ShortDramaService.swift */; };
 		A10127 /* ShortDramaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10127 /* ShortDramaView.swift */; };
 		A10128 /* ShortDramaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10128 /* ShortDramaDetailView.swift */; };
@@ -204,6 +204,8 @@
 		A10131 /* BackupRestoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10131 /* BackupRestoreSheet.swift */; };
 		A10132 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10132 /* BackupManager.swift */; };
 		A10133 /* MusicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10133 /* MusicView.swift */; };
+		A10134 /* AudioPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10134 /* AudioPlayerManager.swift */; };
+		A10135 /* MusicPlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* MusicPlayerViews.swift */; };
 		A10136 /* CloudDriveAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10136 /* CloudDriveAuthManager.swift */; };
 		A10137 /* SpiderEngineProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10137 /* SpiderEngineProtocol.swift */; };
 		A10138 /* SiteDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10138 /* SiteDiagnostics.swift */; };
@@ -359,6 +361,7 @@
 		F39C53FE3F6B5C2BD96EF8B6 /* gnutls.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 5F77356B6F268B826247C658 /* gnutls.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F3EA3090EC7F64A6DE903861 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503DFF3D4783584E77D08009 /* GoProxyManager.swift */; };
 		F50BF2FA088707EC7E1EA263 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26383B763331C1165261CC35 /* GoProxyManager.swift */; };
+		F673B656D5F91087C52FA765 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C70DB88B74441475D62915 /* GoProxyManager.swift */; };
 		F7481825FDA4FFE67F4F8820 /* Libcrypto.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E551770B0DFF5D47EF29B134 /* Libcrypto.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F945DD57EC3787BF073E06F6 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74C6B7071D06468A749908F0 /* GoProxyManager.swift */; };
 		FA3D664D6F46807478A3527A /* Libssl.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3E1A10C4BB41A9830B2449A3 /* Libssl.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -381,8 +384,6 @@
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
-		A10134 /* AudioPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10134 /* AudioPlayerManager.swift */; };
-		A10135 /* MusicPlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* MusicPlayerViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -541,6 +542,7 @@
 		85F7AFA442268244B7B8E163 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		86389D392DE3C84BDFD142BB /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		86829CD08A7449B682FF058E /* DailyBattleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBattleService.swift; sourceTree = "<group>"; };
+		89C70DB88B74441475D62915 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		8BADA08A39112F098A3BF3E1 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		8CB76BCAE82BBCA67D9E049A /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		8D0810C8BFDF959A1869E49D /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
@@ -627,7 +629,8 @@
 		B10131 /* BackupRestoreSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreSheet.swift; sourceTree = "<group>"; };
 		B10132 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		B10133 /* MusicView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicView.swift; sourceTree = "<group>"; };
-		B10135 /* BaiduWebViewBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaiduWebViewBridge.swift; sourceTree = "<group>"; };
+		B10134 /* AudioPlayerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerManager.swift; sourceTree = "<group>"; };
+		B10135 /* MusicPlayerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlayerViews.swift; sourceTree = "<group>"; };
 		B10136 /* CloudDriveAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDriveAuthManager.swift; sourceTree = "<group>"; };
 		B10137 /* SpiderEngineProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpiderEngineProtocol.swift; sourceTree = "<group>"; };
 		B10138 /* SiteDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteDiagnostics.swift; sourceTree = "<group>"; };
@@ -779,8 +782,6 @@
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
-		B10134 /* AudioPlayerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerManager.swift; sourceTree = "<group>"; };
-		B10135 /* MusicPlayerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlayerViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1324,6 +1325,7 @@
 				8F4FFDBA3D73C29D8759DF1F /* Bridge */,
 				98B296D1DBDB533936863114 /* Bridge */,
 				086B52CC60EC8E0713D0EBC7 /* Bridge */,
+				F140B5BB72792487063D0979 /* Bridge */,
 			);
 			name = vbox;
 			sourceTree = "<group>";
@@ -1800,6 +1802,15 @@
 			path = Bridge;
 			sourceTree = "<group>";
 		};
+		F140B5BB72792487063D0979 /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				89C70DB88B74441475D62915 /* GoProxyManager.swift */,
+			);
+			name = Bridge;
+			path = Bridge;
+			sourceTree = "<group>";
+		};
 		F255F99B2D0DBAFF32EAC2C0 /* Bridge */ = {
 			isa = PBXGroup;
 			children = (
@@ -1902,7 +1913,7 @@
 				CAFE00000000000000000001 /* RemoteSourceConfigManager.swift */,
 				CAFE00000000000000000005 /* FeedbackService.swift */,
 				B10015 /* SubscriptionManager.swift */,
-				B10135 /* BaiduWebViewBridge.swift */,
+				B10135 /* MusicPlayerViews.swift */,
 				3B9F73BC83E18E7C07A730C2 /* AppLogStore.swift */,
 				66C1457418C14A0C9B7011DB /* AliyunPgAuthManager.swift */,
 				01882BD0F65A4C05B6176223 /* ExtscreenAPIClient.swift */,
@@ -2310,7 +2321,7 @@
 				SU0100000000000000000A001 /* SubtitleParser.swift in Sources */,
 				A10046 /* ZhanyuanSearchService.swift in Sources */,
 				37A8FB0406404A94A0619C06 /* ProfileView.swift in Sources */,
-				A10047 /* BaiduWebViewBridge.swift in Sources */,
+				A10047 /* MusicPlayerViews.swift in Sources */,
 				FE31F3FFC9094771B7E85EFB /* WelfareHomeView.swift in Sources */,
 				2EA577E0E4961A799C3DE3AA /* OnePlatformService.swift in Sources */,
 				5CCD32EF8BCC5461BECAB1DA /* MDTVService.swift in Sources */,
@@ -2478,6 +2489,7 @@
 				A10134 /* AudioPlayerManager.swift in Sources */,
 				A10135 /* MusicPlayerViews.swift in Sources */,
 				EB93E65B715CC1EC79FB1263 /* GoProxyManager.swift in Sources */,
+				F673B656D5F91087C52FA765 /* GoProxyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
