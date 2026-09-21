@@ -490,6 +490,9 @@ final class BackupManager {
         let decoder = JSONDecoder()
 
         switch category {
+        case .remoteSources:
+            // 远程源在主循环中提前处理（含版本检测），此处仅满足 switch 穷尽性
+            return 0
         case .watchHistory:
             let records = try decoder.decode([HistoryRecord].self, from: data)
             if strategy == .overwrite { db.clearHistory() }

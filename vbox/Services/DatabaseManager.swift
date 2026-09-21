@@ -863,7 +863,7 @@ class DatabaseManager {
         do {
             try dbPool.write { db in
                 try UserSetting
-                    .filter(UserSetting.Columns.key.in(keys))
+                    .filter(keys.contains(UserSetting.Columns.key))
                     .deleteAll(db)
             }
             print("[DatabaseManager] 已删除 \(keys.count) 个设置键")
