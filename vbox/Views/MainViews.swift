@@ -769,6 +769,8 @@ struct HomeView: View {
             Self.cachedBannerItems = bannerItems
 
             isLoading = false
+            // 首页已有可展示数据：通知启动页淡出进入首页
+            SplashGateMonitor.shared.markHomeReady()
 
             // 异步获取横版海报 URL，逐条更新 + 预缓存前 3 张
             await fetchBackdropURLs()
@@ -821,6 +823,8 @@ struct HomeView: View {
         japaneseTV = Self.cachedJapaneseTV
         hotVariety = Self.cachedHotVariety
         isLoading = false
+        // 首页有可展示数据：通知启动页可以淡出进入首页
+        SplashGateMonitor.shared.markHomeReady()
     }
 }
 

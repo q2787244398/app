@@ -364,6 +364,8 @@
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
+		A10129 /* SplashGateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10129 /* SplashGateMonitor.swift */; };
+		A10130 /* VboxSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10130 /* VboxSplashView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -743,6 +745,8 @@
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
+		B10129 /* SplashGateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashGateMonitor.swift; sourceTree = "<group>"; };
+		B10130 /* VboxSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VboxSplashView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1773,6 +1777,7 @@
 				B11003 /* ZhanyuanSearchService.swift */,
 				2BE5BCDC441F4B10BD45AB3A /* YBoxAPIService.swift */,
 				B10126 /* ShortDramaService.swift */,
+				B10129 /* SplashGateMonitor.swift */,
 				B10200 /* YBoxService2.swift */,
 				95838F158F95F94719AAE9D0 /* OnePlatformService.swift */,
 				D3AEA5E3D59D5893B8304746 /* MDTVService.swift */,
@@ -1850,6 +1855,7 @@
 				CDCEBC3E4EE94F1A9500D38E /* DailyBattleMainView.swift */,
 				B10127 /* ShortDramaView.swift */,
 				B10128 /* ShortDramaDetailView.swift */,
+				B10130 /* VboxSplashView.swift */,
 				B10203 /* WelfareSubViews.swift */,
 				B12033 /* SangeCategoryView.swift */,
 				B12034 /* SangeListView.swift */,
@@ -2163,6 +2169,8 @@
 				A10126 /* ShortDramaService.swift in Sources */,
 				A10127 /* ShortDramaView.swift in Sources */,
 				A10128 /* ShortDramaDetailView.swift in Sources */,
+				A10129 /* SplashGateMonitor.swift in Sources */,
+				A10130 /* VboxSplashView.swift in Sources */,
 				A10200 /* YBoxService2.swift in Sources */,
 				D2AC0641D1BA4218849EFA47 /* DailyBattleService.swift in Sources */,
 				C0MISSAV001 /* MissAVService.swift in Sources */,

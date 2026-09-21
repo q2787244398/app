@@ -8,6 +8,12 @@ struct ContentView: View {
     @State private var showDownloadPopup: Bool = false
     @ObservedObject private var downloadManager = DownloadManager.shared
 
+    // ---- 动态启动页：数据门控 + 10 秒兜底 ----
+    @State private var showSplash: Bool = true
+    @State private var splashAppearTime: Date = Date()
+    @ObservedObject private var splashMonitor = SplashGateMonitor.shared
+    private let splashMinHold: TimeInterval = 1.2   // 最短展示时长，避免一闪而过
+
     enum Tab: String, CaseIterable {
         case home = "首页"
         case search = "搜索"
@@ -137,6 +143,8 @@ struct ContentView: View {
             if !settings.searchQuery.isEmpty { selectedTab = .home }
         }
         .onAppear {
+            // 记录启动页出现时间，用于最短展示时长与 10 秒兜底
+            splashAppearTime = Date()
             // 更新检测与爬虫初始化并行执行，避免弹窗延迟
             Task {
                 await SpiderManager.shared.initialize()
@@ -151,6 +159,17 @@ struct ContentView: View {
                     }
                 }
             }
+            // 10 秒兜底：首页数据迟迟未就绪时强制退出启动页，避免卡启动页
+            Task {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                await MainActor.run {
+                    dismissSplashIfNeeded()
+                }
+            }
+        }
+        // 首页数据就绪：立即淡出启动页进入首页
+        .onChange(of: splashMonitor.homeDataReady) { ready in
+            if ready { dismissSplashIfNeeded() }
         }
         .overlay {
             if showUpdateSheet {
@@ -189,6 +208,14 @@ struct ContentView: View {
                 .zIndex(5)
             }
         }
+        // 动态启动页覆盖层（最高层级，覆盖弹窗与底栏）
+        .overlay {
+            if showSplash {
+                VboxSplashView()
+                    .transition(.opacity)
+                    .zIndex(30)
+            }
+        }
         .onChange(of: UpdateManager.shared.isMinimized) { _ in
             // 下载完成时自动弹出
             if UpdateManager.shared.isMinimized && !UpdateManager.shared.isDownloading {
@@ -197,6 +224,15 @@ struct ContentView: View {
                     showUpdateSheet = true
                 }
             }
+        }
+    }
+
+    /// 淡出启动页：同时满足"最短展示时长"与"数据就绪或 10 秒兜底"才执行
+    private func dismissSplashIfNeeded() {
+        guard showSplash,
+              Date().timeIntervalSince(splashAppearTime) >= splashMinHold else { return }
+        withAnimation(.easeInOut(duration: 0.4)) {
+            showSplash = false
         }
     }
 
