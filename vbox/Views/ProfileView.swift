@@ -60,8 +60,10 @@ struct ProfileView: View {
     @StateObject private var updateManager = UpdateManager.shared
     @State private var isLoggedIn: Bool = false
     @State private var username: String = ""
+    @State private var account: String = ""        // 登录账号（本地账号体系的标识，不可改）
     @State private var avatarImage: Image? = nil
     @State private var showLoginSheet: Bool = false
+    @State private var showEditNickname: Bool = false
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showPhotoPicker: Bool = false
     @State private var historyRecords: [HistoryRecord] = []
@@ -124,8 +126,15 @@ struct ProfileView: View {
                 LoginSheetView(
                     isLoggedIn: $isLoggedIn,
                     username: $username,
+                    account: $account,
                     isPresented: $showLoginSheet
                 )
+            }
+            .sheet(isPresented: $showEditNickname) {
+                EditNicknameSheet(currentName: username) { newName in
+                    username = newName
+                    DatabaseManager.shared.setSetting(key: "username", value: newName)
+                }
             }
             .sheet(isPresented: $showWatchHistory) {
                 NavigationView {
@@ -255,10 +264,29 @@ struct ProfileView: View {
             }
             .buttonStyle(.plain)
 
-            // 用户名
-            Text(isLoggedIn ? username : "未登录")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(textColor)
+            // 用户名（登录后点击可修改）
+            Button(action: {
+                if isLoggedIn { showEditNickname = true }
+            }) {
+                HStack(spacing: 6) {
+                    Text(isLoggedIn ? username : "未登录")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(textColor)
+                    if isLoggedIn {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray.opacity(0.6))
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            // 账号说明（登录后展示，与可修改的用户名区分开）
+            if isLoggedIn {
+                Text("账号：\(account)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
 
             // 登录按钮
             if !isLoggedIn {
@@ -732,9 +760,15 @@ struct ProfileView: View {
     }
 
     private func loadInitialState() {
+        // 账号（登录标识）：新版独立存储；旧版本没有 account 时，用老 username 兜底迁移
+        if let savedAccount = DatabaseManager.shared.getSetting(key: "account"),
+           !savedAccount.isEmpty {
+            account = savedAccount
+        }
         if let savedUsername = DatabaseManager.shared.getSetting(key: "username"),
            !savedUsername.isEmpty {
             username = savedUsername
+            if account.isEmpty { account = savedUsername }
         }
         if let savedLoggedIn = DatabaseManager.shared.getSetting(key: "isLoggedIn"),
            savedLoggedIn == "true" {
@@ -801,6 +835,7 @@ struct LoginSheetView: View {
     @EnvironmentObject private var settings: AppSettings
     @Binding var isLoggedIn: Bool
     @Binding var username: String
+    @Binding var account: String
     @Binding var isPresented: Bool
     @State private var inputUsername: String = ""
     @State private var inputPassword: String = ""
@@ -862,14 +897,14 @@ struct LoginSheetView: View {
 
                 // 登录卡片
                 VStack(spacing: 16) {
-                    // 用户名输入框
+                    // 账号输入框（登录标识）
                     HStack(spacing: 10) {
                         Image(systemName: "person.fill")
                             .font(.system(size: 16))
                             .foregroundColor(Color(hex: "3B82F6"))
                             .frame(width: 22)
 
-                        TextField("用户名", text: $inputUsername)
+                        TextField("账号", text: $inputUsername)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                     }
@@ -1022,12 +1057,95 @@ struct LoginSheetView: View {
     }
 
     private func loginSuccess(name: String) {
-        username = name
+        account = name
+        // 首次登录时用户名默认取账号；已有用户名则保留（账号与用户名分离）
+        if username.isEmpty { username = name }
         isLoggedIn = true
-        DatabaseManager.shared.setSetting(key: "username", value: name)
+        DatabaseManager.shared.setSetting(key: "account", value: name)
+        DatabaseManager.shared.setSetting(key: "username", value: username)
         DatabaseManager.shared.setSetting(key: "isLoggedIn", value: "true")
         isLoading = false
         isPresented = false
+    }
+}
+
+// MARK: - EditNicknameSheet（修改用户名：仅改展示名，不影响登录账号）
+
+struct EditNicknameSheet: View {
+    @Environment(\.presentationMode) private var presentationMode
+    let currentName: String
+    let onSave: (String) -> Void
+
+    @State private var input: String = ""
+    @State private var errorText: String? = nil
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 16) {
+                TextField("输入新的用户名", text: $input)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(Color(uiColor: .systemGray6))
+                    .cornerRadius(12)
+
+                if let errorText = errorText {
+                    Text(errorText)
+                        .font(.system(size: 12))
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                }
+
+                Button(action: save) {
+                    Text("保存")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(hex: "3B82F6"))
+                        .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+
+                Text("修改的是展示用户名，登录账号保持不变")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("修改用户名")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("取消") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+            .onAppear { input = currentName }
+        }
+        .accentColor(Color(hex: "3B82F6"))
+    }
+
+    private func save() {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorText = "用户名不能为空"
+            return
+        }
+        guard trimmed.count <= 16 else {
+            errorText = "用户名最长 16 个字符"
+            return
+        }
+        if trimmed == currentName {
+            presentationMode.wrappedValue.dismiss()
+            return
+        }
+        onSave(trimmed)
+        presentationMode.wrappedValue.dismiss()
     }
 }
 
