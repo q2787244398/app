@@ -620,6 +620,15 @@ final class BackupManager {
         let cacheDir = mgr.jsCacheDirectory.deletingLastPathComponent()
         try? fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
+        // 用户显式还原"远程源"类目，意图就是启用并展示备份中的远程源数据。
+        // 但还原 personalSettings 时会把备份时的开关状态（可能为关闭）覆盖回来，
+        // 导致数据已写回却被开关隐藏（JS 蜘蛛引擎不加载、切换源无 JS 源）。
+        // 这里在写回缓存后强制开启开关，保证还原的数据立即可见。
+        if !mgr.remoteDefaultSourceEnabled {
+            mgr.remoteDefaultSourceEnabled = true
+            print("[BackupManager] 还原远程源缓存，强制开启远程默认源开关")
+        }
+
         var restoredCount = 0
         if let manifest = snapshot.manifest {
             try? manifest.write(to: cacheDir.appendingPathComponent("manifest.json"), options: .atomic)
@@ -662,6 +671,10 @@ final class BackupManager {
         let defaults = UserDefaults.standard
         for (key, value) in snapshot.defaults {
             guard let entry = Self.settingsDefaultKeys.first(where: { $0.key == key }) else { continue }
+            // 远程源开关不随个人设置还原：远程源数据是否展示由用户当前意图决定
+            // （还原远程源缓存时由 restoreRemoteSources 统一开启；单独还原个人设置
+            //  时也不应被旧备份的开关状态覆盖）。
+            if key == RemoteSourceConfigKeys.remoteDefaultSourceEnabled { continue }
             // 福利数据仅在加密备份中还原（口令保护）；明文备份即使包含也跳过
             if entry.isWelfare && !wasEncrypted { continue }
             switch entry.type {
