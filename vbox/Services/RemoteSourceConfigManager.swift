@@ -296,7 +296,11 @@ final class RemoteSourceConfigManager: ObservableObject {
     }
 
     func cachedSpiderSites() -> [SiteConfig] {
-        cachedSpiderConfig()?.sites ?? []
+        // 直接从 all_sources.json 的 spiderSources.sites 读取，避免 encode→decode 二次转换
+        // 可能失败导致返回空（表现为 JS 蜘蛛引擎一个都不加载、切换源里 JS 源缺失）。
+        // sites 本身就是 [SiteConfig]（可选），与缓存 API 源同源，无需经 SubscribeConfig 重建。
+        guard let allSources = cachedAllSources() else { return [] }
+        return allSources.spiderSources?.sites ?? []
     }
 
     func cachedDisabledHosts() -> [String] {

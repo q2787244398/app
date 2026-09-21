@@ -697,6 +697,8 @@ globalThis.__JS_SPIDER__ = _spider;
                     allSitesBuilder.append(contentsOf: newSpiderSites)
                     print("[SpiderManager] 从远程默认源合并 JS 蜘蛛站: \(newSpiderSites.count) 个")
                 }
+            } else if remoteSourceManager.remoteDefaultSourceEnabled {
+                AppLogStore.shared.info(.spider, "[SpiderManager] ⚠️ 远程默认源开启但 cachedSpiderSites() 为空，JS 蜘蛛源将不会被加载")
             }
             // 一次性赋值，避免中间状态触发缓存失效
             self.allSites = allSitesBuilder
