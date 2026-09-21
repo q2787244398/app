@@ -80,8 +80,8 @@ struct VboxSplashView: View {
     // ---- 循环动画参数 ----
     private let breathingCycle: Double = 2.4     // 呼吸缩放周期（秒）
     private let floatCycle: Double = 3.0         // 上下浮动周期（秒）
-    private let breathScale: CGFloat = 1.035     // 呼吸最大缩放
-    private let floatAmplitude: CGFloat = 4      // 浮动最大位移（pt）
+    private let breathScale: CGFloat = 1.05     // 呼吸最大缩放
+    private let floatAmplitude: CGFloat = 6      // 浮动最大位移（pt）
 
     // ---- 动画状态 ----
     @State private var isAnimating = false       // 第一阶段：飞入聚合
@@ -191,13 +191,12 @@ struct VboxSplashView: View {
         }
 
         // 第 3 阶段：进入无限循环（呼吸缩放 + 上下浮动）
+        // 注意：状态切换不能再用 withAnimation 包裹 —— 视图上已挂
+        // .animation(_:value:) + repeatForever 修饰符，双驱动在部分 iOS 版本
+        // 会让 repeatForever 只播放一次不循环；这里只切状态，动画交给修饰符。
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeInOut(duration: breathingCycle).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-            withAnimation(.easeInOut(duration: floatCycle).repeatForever(autoreverses: true)) {
-                floating = true
-            }
+            breathing = true
+            floating = true
         }
     }
 }
