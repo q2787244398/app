@@ -4657,8 +4657,13 @@ globalThis.__JS_SPIDER__ = _spider;
         for (key, _) in engines {
             if items.contains(where: { $0.id == "js_\(key)" || $0.id == "music_\(key)" }) { continue }
             let siteConfig = allSites.first(where: { $0.key == key })
-            // 音乐源识别：Key 前缀 nodejs_musicai 或 SiteConfig.group == "music"
-            let isMusic = key.hasPrefix("nodejs_musicai") || siteConfig?.group == "music"
+            // 音乐源识别：Key 前缀 nodejs_musicai / MusicAi / SiteConfig.group == "music" / api 包含 MusicAi
+            let lowerKey = key.lowercased()
+            let lowerApi = siteConfig?.api?.lowercased() ?? ""
+            let isMusic = lowerKey.hasPrefix("nodejs_musicai")
+                || lowerKey.hasPrefix("musicaid")
+                || siteConfig?.group == "music"
+                || lowerApi.contains("musicaid")
             if isMusic {
                 items.append(SourceDisplayItem(
                     id: "music_\(key)",

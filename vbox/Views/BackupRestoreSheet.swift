@@ -1,26 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - 备份文件文档（用于导出/导入）
-
-struct BackupFileDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
-
-    var data: Data
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
-    }
-}
-
 // MARK: - 备份与还原弹窗
 
 struct BackupRestoreSheet: View {
@@ -47,17 +27,15 @@ struct BackupRestoreSheet: View {
     @State private var restorePassword: String = ""
     @State private var strategy: ConflictStrategy = .merge
 
-    // 文件交互
-    @State private var showImporter = false
-    @State private var exportDocument: BackupFileDocument? = nil
-    @State private var showExporter = false
-    @State private var exportFilename = ""
-
     // 状态
     @State private var isWorking = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var showAlert = false
+
+    // UIKit 文档选择器协调器
+    @State private var importPickerDelegate: ImportPickerDelegate?
+    @State private var exportPickerDelegate: ExportPickerDelegate?
 
     var body: some View {
         NavigationView {
@@ -90,24 +68,6 @@ struct BackupRestoreSheet: View {
                     Button("取消") { dismiss() }
                 }
             }
-            // fileImporter 和 fileExporter 分挂不同子视图，避免 SwiftUI 同时挂载时回调不触发
-            .background(
-                Color.clear
-                    .frame(width: 0, height: 0)
-                    .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json, .item]) { result in
-                        handleImport(result)
-                    }
-            )
-            .background(
-                Color.clear
-                    .frame(width: 0, height: 0)
-                    .fileExporter(isPresented: $showExporter,
-                                  document: exportDocument,
-                                  contentType: .json,
-                                  defaultFilename: exportFilename) { _ in
-                        exportDocument = nil
-                    }
-            )
             .alert(alertTitle, isPresented: $showAlert) {
                 Button("好", role: .cancel) {}
             } message: {
@@ -293,7 +253,7 @@ struct BackupRestoreSheet: View {
                 }
                 .disabled(isWorking)
             } else {
-                Button(action: { showImporter = true }) {
+                Button(action: presentImportPicker) {
                     VStack(spacing: 10) {
                         Image(systemName: "doc.badge.plus")
                             .font(.system(size: 34))
@@ -362,46 +322,16 @@ struct BackupRestoreSheet: View {
                     categories: Array(selectedCategories),
                     password: password.isEmpty ? nil : password
                 )
-                exportDocument = BackupFileDocument(data: data)
                 let stamp = Self.stampString()
                 let name = currentAccount.isEmpty
                     ? "vbox备份_\(stamp).json"
                     : "vbox备份_\(currentAccount)_\(stamp).json"
-                exportFilename = name
                 isWorking = false
-                showExporter = true
+                presentExportPicker(data: data, filename: name)
             } catch {
                 isWorking = false
                 showAlert(title: "备份失败", message: error.localizedDescription)
             }
-        }
-    }
-
-    private func handleImport(_ result: Result<URL, Error>) {
-        switch result {
-        case .success(let url):
-            print("[BackupRestore] fileImporter 回调成功: \(url.lastPathComponent)")
-            let didStart = url.startAccessingSecurityScopedResource()
-            guard let data = try? Data(contentsOf: url) else {
-                if didStart { url.stopAccessingSecurityScopedResource() }
-                print("[BackupRestore] 读取文件失败")
-                showAlert(title: "读取失败", message: "无法读取该文件，请确认文件未损坏")
-                return
-            }
-            if didStart { url.stopAccessingSecurityScopedResource() }
-            print("[BackupRestore] 文件读取成功，\(data.count) bytes")
-            importedData = data
-            restorePassword = ""
-            do {
-                importedEnvelope = try BackupManager.shared.parseEnvelope(data: data)
-                print("[BackupRestore] 备份文件解析成功")
-            } catch {
-                importedEnvelope = nil
-                print("[BackupRestore] 备份文件解析失败: \(error)")
-                showAlert(title: "无法识别", message: error.localizedDescription)
-            }
-        case .failure(let error):
-            showAlert(title: "导入失败", message: error.localizedDescription)
         }
     }
 
@@ -440,6 +370,91 @@ struct BackupRestoreSheet: View {
         showAlert = true
     }
 
+    // MARK: - UIKit 文件选择器（解决 sheet 中 SwiftUI fileImporter 回调不触发问题）
+
+    /// 弹出文件选择器（导入备份文件）
+    private func presentImportPicker() {
+        guard let topVC = Self.topMostViewController() else {
+            showAlert(title: "无法打开", message: "无法获取当前视图控制器")
+            return
+        }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.json, .item], asCopy: true)
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        let delegate = ImportPickerDelegate { url in
+            if let url = url {
+                handleImportedFile(url: url)
+            }
+        }
+        importPickerDelegate = delegate
+        picker.delegate = delegate
+        topVC.present(picker, animated: true)
+    }
+
+    /// 处理导入的文件
+    private func handleImportedFile(url: URL) {
+        print("[BackupRestore] 导入文件: \(url.lastPathComponent)")
+        let didStart = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStart { url.stopAccessingSecurityScopedResource() }
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            print("[BackupRestore] 读取文件失败")
+            showAlert(title: "读取失败", message: "无法读取该文件，请确认文件未损坏")
+            return
+        }
+        print("[BackupRestore] 文件读取成功，\(data.count) bytes")
+        importedData = data
+        restorePassword = ""
+        do {
+            importedEnvelope = try BackupManager.shared.parseEnvelope(data: data)
+            print("[BackupRestore] 备份文件解析成功")
+        } catch {
+            importedEnvelope = nil
+            print("[BackupRestore] 备份文件解析失败: \(error)")
+            showAlert(title: "无法识别", message: error.localizedDescription)
+        }
+    }
+
+    /// 弹出文件导出器（保存备份文件）
+    private func presentExportPicker(data: Data, filename: String) {
+        // 先写入临时目录
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        do {
+            if FileManager.default.fileExists(atPath: tempURL.path) {
+                try FileManager.default.removeItem(at: tempURL)
+            }
+            try data.write(to: tempURL)
+        } catch {
+            showAlert(title: "导出失败", message: "临时文件写入失败：\(error.localizedDescription)")
+            return
+        }
+
+        guard let topVC = Self.topMostViewController() else {
+            showAlert(title: "无法打开", message: "无法获取当前视图控制器")
+            return
+        }
+
+        let picker = UIDocumentPickerViewController(forExporting: [tempURL], asCopy: true)
+        picker.shouldShowFileExtensions = true
+        let delegate = ExportPickerDelegate()
+        exportPickerDelegate = delegate
+        picker.delegate = delegate
+        topVC.present(picker, animated: true)
+    }
+
+    /// 获取顶层视图控制器
+    private static func topMostViewController() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first(where: { $0.isKeyWindow }),
+              let rootVC = window.rootViewController else { return nil }
+        var topVC = rootVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+        return topVC
+    }
+
     // MARK: - 工具
 
     private static func dateString(_ timestamp: Int64) -> String {
@@ -452,5 +467,35 @@ struct BackupRestoreSheet: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmm"
         return formatter.string(from: Date())
+    }
+}
+
+// MARK: - 导入文件选择器代理
+
+private final class ImportPickerDelegate: NSObject, UIDocumentPickerDelegate {
+    let onPick: (URL?) -> Void
+
+    init(onPick: @escaping (URL?) -> Void) {
+        self.onPick = onPick
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        onPick(urls.first)
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        onPick(nil)
+    }
+}
+
+// MARK: - 导出文件选择器代理
+
+private final class ExportPickerDelegate: NSObject, UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        // 导出成功，无需额外处理
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        // 用户取消，无需额外处理
     }
 }
