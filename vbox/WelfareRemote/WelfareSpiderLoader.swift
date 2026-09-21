@@ -140,7 +140,7 @@ final class WelfareSpiderLoader {
             return absolute
         }
 
-        // 空/无效的默认源地址回退内置默认，仍解析失败则交给调用方走 invalidRemoteURL 错误
+        // 默认源地址被清空时解析失败，交由调用方走 invalidRemoteURL 错误提示
         guard let manifest = URL(string: RemoteSourceConfigManager.currentDefaultManifestURL()) else {
             return nil
         }
