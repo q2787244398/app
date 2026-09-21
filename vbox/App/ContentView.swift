@@ -85,10 +85,11 @@ struct ContentView: View {
                 .background(settings.usesVisualSkin ? Color.clear : Color(uiColor: .systemBackground))
                 .ignoresSafeArea(.keyboard, edges: .bottom)
 
-                // 远程源状态通知条 + 下载胶囊通知 + 悬浮式底部导航栏
+                // 远程源状态通知条 + 下载胶囊通知 + Mini Player + 悬浮式底部导航栏
                 VStack(spacing: 0) {
                     RemoteSourceStatusBar()
                     DownloadCapsuleNotification()
+                    MiniPlayerBar()
 
                     // 悬浮式底部导航栏
                     if !settings.isTabBarHidden {
@@ -143,6 +144,8 @@ struct ContentView: View {
             if !settings.searchQuery.isEmpty { selectedTab = .home }
         }
         .onAppear {
+            // 恢复上次音乐播放队列
+            AudioPlayerManager.shared.restoreQueue()
             // 记录启动页出现时间，用于最短展示时长与 10 秒兜底
             splashAppearTime = Date()
             // 更新检测与爬虫初始化并行执行，避免弹窗延迟

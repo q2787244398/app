@@ -8,6 +8,8 @@ new_ids = {
     "BackupManager.swift": ("B10132", "A10132", "Services"),
     "BackupRestoreSheet.swift": ("B10131", "A10131", "Views"),
     "MusicView.swift": ("B10133", "A10133", "Views"),
+    "AudioPlayerManager.swift": ("B10134", "A10134", "Services"),
+    "MusicPlayerViews.swift": ("B10135", "A10135", "Views"),
 }
 
 # 幂等：跳过已登记的文件

@@ -1,5 +1,5 @@
 import SwiftUI
-import UIKit
+import AVFoundation
 
 // MARK: - 网络音乐浏览页
 
@@ -214,6 +214,30 @@ struct MusicView: View {
     private func playItem(_ item: VodItem) {
         guard let source = selectedSource ?? viewModel.musicSources.first(where: { $0.engineKey == item.engineKey }) else { return }
         Task { await viewModel.playSong(song: item, source: source) }
+    }
+
+    /// 播放全部（加入队列）
+    private func playAll() {
+        guard let source = selectedSource else { return }
+        Task {
+            var items: [MusicQueueItem] = []
+            for song in viewModel.songs {
+                let (playUrl, _) = await SpiderManager.shared.fetchMusicPlayUrl(
+                    source: source, vodId: song.vodId
+                )
+                if let url = playUrl, !url.isEmpty {
+                    items.append(MusicQueueItem(
+                        from: song,
+                        sourceName: source.name,
+                        engineKey: source.engineKey ?? "",
+                        playURL: url
+                    ))
+                }
+            }
+            if !items.isEmpty {
+                AudioPlayerManager.shared.playQueue(items)
+            }
+        }
     }
 }
 
@@ -478,11 +502,13 @@ final class MusicViewModel: ObservableObject {
         // 播放地址可能包含多线路，格式: 线路1$url1#线路2$url2
         let playItems = parsePlayUrl(url, playFrom: playFrom)
         if let firstItem = playItems.first {
-            if let playURL = URL(string: firstItem.url) {
-                await MainActor.run {
-                    UIApplication.shared.open(playURL)
-                }
-            }
+            let queueItem = MusicQueueItem(
+                from: song,
+                sourceName: source.name,
+                engineKey: source.engineKey ?? "",
+                playURL: firstItem.url
+            )
+            AudioPlayerManager.shared.play(item: queueItem)
         }
     }
 

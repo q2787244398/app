@@ -380,6 +380,8 @@
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
+		A10134 /* AudioPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10134 /* AudioPlayerManager.swift */; };
+		A10135 /* MusicPlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* MusicPlayerViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -775,6 +777,8 @@
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
+		B10134 /* AudioPlayerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerManager.swift; sourceTree = "<group>"; };
+		B10135 /* MusicPlayerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlayerViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1947,6 +1951,7 @@
 				NODEC0DE0208 /* NodePanResolver.swift */,
 				NODEC0DE0209 /* NodeSpiderEngine.swift */,
 				B10132 /* BackupManager.swift */,
+				B10134 /* AudioPlayerManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -2007,6 +2012,7 @@
 				CF3F0DD3D1E7E8C87E12C271 /* SourcePickerSheet.swift */,
 				B10131 /* BackupRestoreSheet.swift */,
 				B10133 /* MusicView.swift */,
+				B10135 /* MusicPlayerViews.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -2457,6 +2463,8 @@
 				1DE194618AB54A8ACAB7996D /* GoProxyManager.swift in Sources */,
 				519A1DE7CBA423057E6CE53E /* GoProxyManager.swift in Sources */,
 				2E4FD18EDA17085DC996EA55 /* GoProxyManager.swift in Sources */,
+				A10134 /* AudioPlayerManager.swift in Sources */,
+				A10135 /* MusicPlayerViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
