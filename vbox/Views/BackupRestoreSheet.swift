@@ -404,8 +404,7 @@ struct BackupRestoreSheet: View {
         // 读取大文件放到后台执行器，避免阻塞主线程；解析完成后回主线程更新 UI
         Task(priority: .userInitiated) {
             let data = try? Data(contentsOf: url)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
+            await MainActor.run {
                 guard let data else {
                     self.showAlert(title: "读取失败", message: "无法读取该文件，请确认文件未损坏")
                     return

@@ -572,9 +572,7 @@ struct HomeView: View {
                     }
                 }
             }
-            .frame(minWidth: UIScreen.main.bounds.width * 0.5,
-                   idealWidth: UIScreen.main.bounds.width * 0.62,
-                   maxWidth: UIScreen.main.bounds.width * 0.78,
+            .frame(width: UIScreen.main.bounds.width * 0.4,
                    maxHeight: UIScreen.main.bounds.height * 0.5)
             .background(homeDropdownBackground)
             .cornerRadius(12)
