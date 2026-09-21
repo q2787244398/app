@@ -83,6 +83,30 @@ struct VboxSplashView: View {
     private let breathScale: CGFloat = 1.05     // 呼吸最大缩放
     private let floatAmplitude: CGFloat = 6      // 浮动最大位移（pt）
 
+    // ---- 深浅模式自适应 ----
+    // 启动页作为 ContentView 覆盖层，自动继承其 preferredColorScheme：
+    // 跟随手机外观开 → 跟随系统深浅；手动深色/liquid → 深色；手动浅色 → 浅色
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var backgroundColors: [Color] {
+        switch colorScheme {
+        case .light:
+            return [
+                Color(red: 0.97, green: 0.97, blue: 0.98),
+                Color(red: 0.90, green: 0.90, blue: 0.93)
+            ]
+        default:
+            return [
+                Color(red: 0.12, green: 0.12, blue: 0.16),
+                Color(red: 0.05, green: 0.05, blue: 0.07)
+            ]
+        }
+    }
+
+    private var subtitleColor: Color {
+        colorScheme == .light ? Color.black.opacity(0.18) : Color.white.opacity(0.25)
+    }
+
     // ---- 动画状态 ----
     @State private var isAnimating = false       // 第一阶段：飞入聚合
     @State private var showGlow = false          // 聚合完成后发光
@@ -91,12 +115,9 @@ struct VboxSplashView: View {
 
     var body: some View {
         ZStack {
-            // 深色渐变背景（与 logo 图背景一致）
+            // 深浅自适应渐变背景（跟随软件/系统外观）
             LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(red: 0.12, green: 0.12, blue: 0.16),
-                    Color(red: 0.05, green: 0.05, blue: 0.07)
-                ]),
+                gradient: Gradient(colors: backgroundColors),
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -168,7 +189,7 @@ struct VboxSplashView: View {
                 Text("play everything")
                     .font(.system(size: 12, weight: .regular))
                     .tracking(4)
-                    .foregroundColor(.white.opacity(0.25))
+                    .foregroundColor(subtitleColor)
                     .padding(.bottom, 80)
                     .opacity(showGlow ? 1 : 0)
                     .animation(.easeIn(duration: 0.4).delay(0.5), value: showGlow)
