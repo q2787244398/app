@@ -21,6 +21,7 @@
 		0C4224BAA1FE23D77C507FAF /* AppLogBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 4C04B78E5C7C1CEA6EFA6359 /* AppLogBridge.m */; };
 		0D1E865FB508DE73B04C17AC /* PlatformAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 424FDF0E29EDDCE590D85773 /* PlatformAsyncImage.swift */; };
 		0DF46A26D5F7B01AF24963C9 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D650B79936B1892EE6020F2 /* GoProxyManager.swift */; };
+		0F4C8023B959F3952534D519 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD19E95A2957972971FA1DB8 /* GoProxyManager.swift */; };
 		111921984B8291A062F394E4 /* Libharfbuzz.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03F4D127BE463286B5D12AA8 /* Libharfbuzz.xcframework */; settings = {ATTRIBUTES = (Required, ); }; };
 		11FFC77DC15A70173DBE12E5 /* Libfreetype.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = D0F468EC9922AFBBB856E9DB /* Libfreetype.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		12A1AC8CFD69FC77D785A754 /* Libass.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 9353A6CB751B12B08CDC9742 /* Libass.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -190,6 +191,8 @@
 		A10126 /* ShortDramaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10126 /* ShortDramaService.swift */; };
 		A10127 /* ShortDramaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10127 /* ShortDramaView.swift */; };
 		A10128 /* ShortDramaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10128 /* ShortDramaDetailView.swift */; };
+		A10129 /* SplashGateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10129 /* SplashGateMonitor.swift */; };
+		A10130 /* VboxSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10130 /* VboxSplashView.swift */; };
 		A10136 /* CloudDriveAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10136 /* CloudDriveAuthManager.swift */; };
 		A10137 /* SpiderEngineProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10137 /* SpiderEngineProtocol.swift */; };
 		A10138 /* SiteDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10138 /* SiteDiagnostics.swift */; };
@@ -364,8 +367,6 @@
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
-		A10129 /* SplashGateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10129 /* SplashGateMonitor.swift */; };
-		A10130 /* VboxSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10130 /* VboxSplashView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -602,6 +603,8 @@
 		B10126 /* ShortDramaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortDramaService.swift; sourceTree = "<group>"; };
 		B10127 /* ShortDramaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortDramaView.swift; sourceTree = "<group>"; };
 		B10128 /* ShortDramaDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortDramaDetailView.swift; sourceTree = "<group>"; };
+		B10129 /* SplashGateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashGateMonitor.swift; sourceTree = "<group>"; };
+		B10130 /* VboxSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VboxSplashView.swift; sourceTree = "<group>"; };
 		B10135 /* BaiduWebViewBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaiduWebViewBridge.swift; sourceTree = "<group>"; };
 		B10136 /* CloudDriveAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDriveAuthManager.swift; sourceTree = "<group>"; };
 		B10137 /* SpiderEngineProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpiderEngineProtocol.swift; sourceTree = "<group>"; };
@@ -678,6 +681,7 @@
 		B7BD5941C23943FA946FBF55 /* FuliPlatformMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuliPlatformMainView.swift; sourceTree = "<group>"; };
 		BABBF6103C4A9D5A89C90E4E /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		BC0DDCA8E55402A5B84FFF39 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
+		BD19E95A2957972971FA1DB8 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		BD46FA65838EB8EB5F268E21 /* Libswresample.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = Libswresample.xcframework; path = vbox/Libraries/MPV/MPVKitDependencies/Libswresample.xcframework; sourceTree = SOURCE_ROOT; };
 		BE9AE9B5DEB55DA855247797 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		BFE207598530999CD737A4C6 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
@@ -745,8 +749,6 @@
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
-		B10129 /* SplashGateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashGateMonitor.swift; sourceTree = "<group>"; };
-		B10130 /* VboxSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VboxSplashView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1242,6 +1244,7 @@
 				B0458365F27A7BE1F195A5EE /* Bridge */,
 				B918754FF9A2D9E4504F2EC3 /* Bridge */,
 				AA675C713DC1CCB9C826FF48 /* Bridge */,
+				DC69EF9ECE331B7738091E85 /* Bridge */,
 			);
 			name = vbox;
 			sourceTree = "<group>";
@@ -1596,6 +1599,15 @@
 			isa = PBXGroup;
 			children = (
 				424F3A39C4CD29EEB521F03F /* GoProxyManager.swift */,
+			);
+			name = Bridge;
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		DC69EF9ECE331B7738091E85 /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				BD19E95A2957972971FA1DB8 /* GoProxyManager.swift */,
 			);
 			name = Bridge;
 			path = Bridge;
@@ -2302,6 +2314,7 @@
 				95050F2875A47E48C055C5C7 /* GoProxyManager.swift in Sources */,
 				963362D11C993623AAD148F4 /* GoProxyManager.swift in Sources */,
 				BAB86B062CEA1A8A5934845A /* GoProxyManager.swift in Sources */,
+				0F4C8023B959F3952534D519 /* GoProxyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
