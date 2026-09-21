@@ -452,7 +452,7 @@ final class BackupManager {
                  categories: [BackupCategory],
                  strategy: ConflictStrategy,
                  password: String?,
-                 currentAccount: String) throws -> BackupRestoreResult {
+                 currentAccount: String) async throws -> BackupRestoreResult {
         let envelope = try parseEnvelope(data: backupData)
         let payload = try decodePayload(envelope: envelope, password: password)
 
@@ -471,7 +471,7 @@ final class BackupManager {
 
             if category == .remoteSources {
                 // 远程源：检测到新版本则跳过（不写入 restored，避免误报还原了旧数据）
-                if try restoreRemoteSources(data: raw) == nil {
+                if try await restoreRemoteSources(data: raw) == nil {
                     result.skippedRemoteSourcesOutdated = true
                     continue
                 }
@@ -587,21 +587,12 @@ final class BackupManager {
 
     /// 还原远程源缓存：先探测远程源最新版本，若备份版本较旧则返回 nil（跳过，保留最新配置）；
     /// 探测失败（离线等）时回退写入备份缓存，保证功能可用。
-    private func restoreRemoteSources(data: Data) throws -> Int? {
+    private func restoreRemoteSources(data: Data) async throws -> Int? {
         let snapshot = try JSONDecoder().decode(RemoteSourcesSnapshot.self, from: data)
         let mgr = RemoteSourceConfigManager.shared
 
-        // 探测远程源最新版本（同步等待结果，避免还原期间状态不确定）
-        let latest: String? = {
-            let semaphore = DispatchSemaphore(value: 0)
-            var result: String?
-            Task { @MainActor in
-                result = await mgr.probeLatestConfigVersion()
-                semaphore.signal()
-            }
-            semaphore.wait()
-            return result
-        }()
+        // 探测远程源最新版本（挂起等待，不阻塞主线程，避免还原期间 UI 卡死）
+        let latest: String? = await mgr.probeLatestConfigVersion()
 
         // 检测到远程源已有更新版本 → 跳过还原旧缓存（App 会自动拉取最新配置）
         if let latest, !latest.isEmpty, snapshot.version != latest {

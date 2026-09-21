@@ -13,7 +13,6 @@ struct PlatformAsyncImage: View {
 
     @State private var image: UIImage?
     @State private var loadFailed = false
-    @State private var retryCount = 0
 
     init(urlString: String, mode: PlatformImageMode, contentMode: ContentMode = .fill) {
         self.urlString = urlString
@@ -28,7 +27,7 @@ struct PlatformAsyncImage: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
             } else if loadFailed {
-                // 加载失败: 灰色背景 + 图标
+                // 加载失败: 灰色背景 + 图标（不拦截点击，让其穿透到外层 NavigationLink/Button）
                 Rectangle()
                     .fill(Color.gray.opacity(0.18))
                     .overlay(
@@ -36,15 +35,9 @@ struct PlatformAsyncImage: View {
                             .foregroundColor(.white.opacity(0.4))
                             .font(.system(size: 24))
                     )
-                    .onTapGesture {
-                        if retryCount < 2 {
-                            retryCount += 1
-                            loadFailed = false
-                            loadImage()
-                        }
-                    }
+                    .allowsHitTesting(false)
             } else {
-                // 加载中
+                // 加载中（占位不拦截点击，让其穿透到外层 NavigationLink/Button）
                 Rectangle()
                     .fill(Color.gray.opacity(0.1))
                     .overlay(
@@ -52,6 +45,7 @@ struct PlatformAsyncImage: View {
                             .foregroundColor(.white.opacity(0.3))
                             .font(.system(size: 20))
                     )
+                    .allowsHitTesting(false)
             }
         }
         .onAppear { loadImage() }

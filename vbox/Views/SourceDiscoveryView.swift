@@ -255,10 +255,12 @@ struct SourceDiscoveryView: View {
                                         } else {
                                             Color.clear.frame(width: 16, height: 12)
                                         }
-                                        Text(item.name)
-                                            .font(.system(size: 14, weight: item.id == source.id ? .semibold : .regular))
-                                            .foregroundColor(item.id == source.id ? Color(hex: "E11B48") : dropdownTextColor)
-                                            .lineLimit(1)
+                                        SourceMarqueeText(
+                                            text: item.name,
+                                            fontSize: 14,
+                                            weight: item.id == source.id ? .semibold : .regular,
+                                            color: item.id == source.id ? Color(hex: "E11B48") : dropdownTextColor
+                                        )
                                     }
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 10)
@@ -276,8 +278,10 @@ struct SourceDiscoveryView: View {
                     }
                 }
             }
-            .frame(width: screenWidth * 0.35)
-            .frame(maxHeight: screenHeight * 0.42)
+            .frame(minWidth: screenWidth * 0.5,
+                   idealWidth: screenWidth * 0.62,
+                   maxWidth: screenWidth * 0.78,
+                   maxHeight: screenHeight * 0.5)
             .background(dropdownBackground)
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
@@ -858,5 +862,108 @@ private struct SourceVideoCard: View {
 private extension VodItem {
     var discoveryStableId: String {
         "\(vodId)|\(vodName)|\(vodPic)|\(vodRemarks ?? "")"
+    }
+}
+
+// MARK: - 单行跑马灯文本（超长名称自动横向滚动，避免换行破坏列表美观）
+
+private struct SourceMarqueeText: View {
+    let text: String
+    var fontSize: CGFloat = 14
+    var weight: Font.Weight = .regular
+    var color: Color = .primary
+
+    /// 滚动停顿（秒）
+    private let pause: Double = 0.9
+    /// 首尾文本间距（无缝拼接）
+    private let gap: CGFloat = 48
+    /// 每周期速度（pt/s）
+    private let speed: CGFloat = 38
+
+    @State private var containerWidth: CGFloat = 0
+    @State private var textWidth: CGFloat = 0
+    @State private var animate = false
+
+    private var totalDistance: CGFloat { textWidth + gap }
+    private var duration: Double {
+        let dist = Double(totalDistance)
+        return dist / Double(speed)
+    }
+
+    /// 是否需要滚动（文本超过容器宽度）
+    private var shouldScroll: Bool {
+        containerWidth > 0 && textWidth > containerWidth - 2
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                // 第一份文本（测量宽度）
+                Text(text)
+                    .font(.system(size: fontSize, weight: weight))
+                    .foregroundColor(color)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background(MarqueeSizeReader { w in
+                        textWidth = w
+                    })
+
+                // 第二份文本（用于无缝循环，仅超长时显示）
+                if shouldScroll {
+                    Text(text)
+                        .font(.system(size: fontSize, weight: weight))
+                        .foregroundColor(color)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .offset(x: textWidth + gap)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .offset(x: animate ? -totalDistance : 0)
+            .onAppear {
+                let cw = geo.size.width
+                containerWidth = cw
+                syncAnimation(cw: cw)
+            }
+            .onChange(of: geo.size.width) { newCW in
+                containerWidth = newCW
+                syncAnimation(cw: newCW)
+            }
+            .onChange(of: textWidth) { _ in
+                syncAnimation(cw: geo.size.width)
+            }
+        }
+        .frame(height: 20)
+    }
+
+    private func syncAnimation(cw: CGFloat) {
+        containerWidth = cw
+        guard shouldScroll else {
+            animate = false
+            return
+        }
+        // 重置进度后延迟开始滚动
+        animate = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000))
+            guard shouldScroll else { return }
+            withAnimation(.linear(duration: duration).repeatForever(autoreverses: false)) {
+                animate = true
+            }
+        }
+    }
+}
+
+/// 测量子视图尺寸并回调
+private struct MarqueeSizeReader: View {
+    let onChange: (CGFloat) -> Void
+
+    var body: some View {
+        GeometryReader { g in
+            Color.clear
+                .onAppear { onChange(g.size.width) }
+                .onChange(of: g.size.width) { _ in onChange(g.size.width) }
+        }
     }
 }

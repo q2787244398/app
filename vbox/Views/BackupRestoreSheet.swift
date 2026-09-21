@@ -342,9 +342,11 @@ struct BackupRestoreSheet: View {
             return
         }
         isWorking = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        // 在后台结构化并发中执行还原，避免阻塞主线程；还原内部含异步探测（远程源版本），
+        // 用 await 挂起而非信号量阻塞，否则主线程卡死被系统看门狗终止
+        Task { @MainActor in
             do {
-                let result = try BackupManager.shared.restore(
+                let result = try await BackupManager.shared.restore(
                     backupData: data,
                     categories: BackupCategory.allCases,
                     strategy: strategy,

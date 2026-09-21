@@ -550,10 +550,12 @@ struct HomeView: View {
                                         } else {
                                             Color.clear.frame(width: 16, height: 12)
                                         }
-                                        Text(item.name)
-                                            .font(.system(size: 14, weight: item.id == selectedSource?.id ? .semibold : .regular))
-                                            .foregroundColor(item.id == selectedSource?.id ? Color(hex: "E11B48") : homeDropdownTextColor)
-                                            .lineLimit(1)
+                                        HomeSourceMarqueeText(
+                                            text: item.name,
+                                            fontSize: 14,
+                                            weight: item.id == selectedSource?.id ? .semibold : .regular,
+                                            color: item.id == selectedSource?.id ? Color(hex: "E11B48") : homeDropdownTextColor
+                                        )
                                     }
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 10)
@@ -570,8 +572,10 @@ struct HomeView: View {
                     }
                 }
             }
-            .frame(width: UIScreen.main.bounds.width * 0.35)
-            .frame(maxHeight: UIScreen.main.bounds.height * 0.42)
+            .frame(minWidth: UIScreen.main.bounds.width * 0.5,
+                   idealWidth: UIScreen.main.bounds.width * 0.62,
+                   maxWidth: UIScreen.main.bounds.width * 0.78,
+                   maxHeight: UIScreen.main.bounds.height * 0.5)
             .background(homeDropdownBackground)
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
@@ -2497,6 +2501,98 @@ struct FlowLayout: Layout {
         var subviews: [LayoutSubviews.Element] = []
         var height: CGFloat {
             subviews.map { $0.dimensions(in: .unspecified).height }.max() ?? 0
+        }
+    }
+}
+
+// MARK: - 首页选源弹窗：单行跑马灯文本（超长名称自动横向滚动，避免换行破坏列表美观）
+
+private struct HomeSourceMarqueeText: View {
+    let text: String
+    var fontSize: CGFloat = 14
+    var weight: Font.Weight = .regular
+    var color: Color = .primary
+
+    private let pause: Double = 0.9
+    private let gap: CGFloat = 48
+    private let speed: CGFloat = 38
+
+    @State private var containerWidth: CGFloat = 0
+    @State private var textWidth: CGFloat = 0
+    @State private var animate = false
+
+    private var totalDistance: CGFloat { textWidth + gap }
+    private var duration: Double { Double(totalDistance) / Double(speed) }
+
+    private var shouldScroll: Bool {
+        containerWidth > 0 && textWidth > containerWidth - 2
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Text(text)
+                    .font(.system(size: fontSize, weight: weight))
+                    .foregroundColor(color)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background(HomeMarqueeSizeReader { w in
+                        textWidth = w
+                    })
+
+                if shouldScroll {
+                    Text(text)
+                        .font(.system(size: fontSize, weight: weight))
+                        .foregroundColor(color)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .offset(x: textWidth + gap)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .offset(x: animate ? -totalDistance : 0)
+            .onAppear {
+                let cw = geo.size.width
+                containerWidth = cw
+                syncAnimation(cw: cw)
+            }
+            .onChange(of: geo.size.width) { newCW in
+                containerWidth = newCW
+                syncAnimation(cw: newCW)
+            }
+            .onChange(of: textWidth) { _ in
+                syncAnimation(cw: geo.size.width)
+            }
+        }
+        .frame(height: 20)
+    }
+
+    private func syncAnimation(cw: CGFloat) {
+        containerWidth = cw
+        guard shouldScroll else {
+            animate = false
+            return
+        }
+        animate = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000))
+            guard shouldScroll else { return }
+            withAnimation(.linear(duration: duration).repeatForever(autoreverses: false)) {
+                animate = true
+            }
+        }
+    }
+}
+
+private struct HomeMarqueeSizeReader: View {
+    let onChange: (CGFloat) -> Void
+
+    var body: some View {
+        GeometryReader { g in
+            Color.clear
+                .onAppear { onChange(g.size.width) }
+                .onChange(of: g.size.width) { _ in onChange(g.size.width) }
         }
     }
 }
