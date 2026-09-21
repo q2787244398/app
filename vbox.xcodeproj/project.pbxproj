@@ -371,6 +371,8 @@
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
+		A10132 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10132 /* BackupManager.swift */; };
+		A10131 /* BackupRestoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10131 /* BackupRestoreSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -757,6 +759,8 @@
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
+		B10132 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
+		B10131 /* BackupRestoreSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1868,6 +1872,7 @@
 				NODEC0DE0206 /* NodeCredentialSyncService.swift */,
 				NODEC0DE0208 /* NodePanResolver.swift */,
 				NODEC0DE0209 /* NodeSpiderEngine.swift */,
+				B10132 /* BackupManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -1926,6 +1931,7 @@
 				17072B53D798B9CAC7FE2853 /* PushPlayView.swift */,
 				F012162D7845BDFEC43668DA /* SourceDiscoveryView.swift */,
 				CF3F0DD3D1E7E8C87E12C271 /* SourcePickerSheet.swift */,
+				B10131 /* BackupRestoreSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -2370,6 +2376,8 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+				A10132 /* BackupManager.swift in Sources */,
+				A10131 /* BackupRestoreSheet.swift in Sources */,
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */

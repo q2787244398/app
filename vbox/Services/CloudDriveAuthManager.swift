@@ -3112,6 +3112,11 @@ final class CloudDriveAuthManager: ObservableObject {
         }
     }
 
+    /// 备份还原写入 Keychain 后，从 Keychain 重载内存缓存
+    func reloadCredentialsFromKeychain() {
+        load()
+    }
+
     private func syncLegacyTokensIfNeeded() {
         for token in CloudDriveManager.shared.savedTokens {
             guard let type = CloudDriveManager.DriveType(rawValue: token.type),

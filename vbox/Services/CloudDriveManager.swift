@@ -937,6 +937,11 @@ class CloudDriveManager: ObservableObject {
         }
     }
 
+    /// 备份还原写入 Keychain 后重载内存 token 缓存
+    func reloadTokensFromKeychain() {
+        loadTokens()
+    }
+
     private func loadQuarkVboxFolderCache() {
         quarkVboxCacheLock.lock()
         defer { quarkVboxCacheLock.unlock() }

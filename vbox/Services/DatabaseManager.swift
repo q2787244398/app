@@ -832,4 +832,43 @@ class DatabaseManager {
             print("[DatabaseManager] 清空下载失败: \(error)")
         }
     }
+
+    // MARK: - 备份还原辅助（批量清空）
+
+    func clearAllFavorites() {
+        do {
+            try dbPool.write { db in
+                try FavoriteRecord.deleteAll(db)
+            }
+            print("[DatabaseManager] 已清空收藏表")
+        } catch {
+            print("[DatabaseManager] 清空收藏失败: \(error)")
+        }
+    }
+
+    func clearAllJiexiSettings() {
+        do {
+            try dbPool.write { db in
+                try JiexiSetting.deleteAll(db)
+            }
+            print("[DatabaseManager] 已清空解析设置表")
+        } catch {
+            print("[DatabaseManager] 清空解析设置失败: \(error)")
+        }
+    }
+
+    /// 删除指定的设置键（覆盖策略还原个人设置时使用）
+    func deleteSettings(keys: [String]) {
+        guard !keys.isEmpty else { return }
+        do {
+            try dbPool.write { db in
+                try UserSetting
+                    .filter(UserSetting.Columns.key.in(keys))
+                    .deleteAll(db)
+            }
+            print("[DatabaseManager] 已删除 \(keys.count) 个设置键")
+        } catch {
+            print("[DatabaseManager] 删除设置失败: \(error)")
+        }
+    }
 }

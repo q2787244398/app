@@ -80,6 +80,7 @@ struct ProfileView: View {
     @State private var isRefreshingRemoteSource: Bool = false
     @State private var showPushPlay: Bool = false
     @State private var showCloudDriveSort: Bool = false
+    @State private var showBackupRestore: Bool = false
     @State private var showFeedbackSheet: Bool = false
     @State private var feedbackTitle: String = ""
     @State private var feedbackBody: String = ""
@@ -149,6 +150,11 @@ struct ProfileView: View {
             .sheet(isPresented: $showDownloads) {
                 NavigationView {
                     DownloadView()
+                }
+            }
+            .sheet(isPresented: $showBackupRestore) {
+                NavigationView {
+                    BackupRestoreSheet(currentAccount: account)
                 }
             }
             .onChange(of: selectedPhotoItem) { _ in
@@ -425,6 +431,20 @@ struct ProfileView: View {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         showCloudDriveSort = true
                     }
+                }
+            }
+
+            HStack(spacing: 12) {
+                // 备份与还原（仅登录态显示）
+                if isLoggedIn {
+                    featureButton(icon: "externaldrive.fill", title: "备份还原") {
+                        showBackupRestore = true
+                    }
+                }
+
+                // 网络音乐（功能展位，为后期音乐栏目预留入口）
+                featureButton(icon: "music.note", title: "网络音乐") {
+                    // 预留：后续接入音乐栏目
                 }
             }
 
