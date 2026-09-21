@@ -446,14 +446,14 @@ struct ProfileView: View {
                 featureButton(icon: "music.note", title: "网络音乐") {
                     // 预留：后续接入音乐栏目
                 }
-            }
 
-            // Bug 反馈
-            featureButton(icon: "ladybug.fill", title: "Bug反馈") {
-                feedbackTitle = ""
-                feedbackBody = ""
-                feedbackService.reset()
-                showFeedbackSheet = true
+                // Bug 反馈
+                featureButton(icon: "ladybug.fill", title: "Bug反馈") {
+                    feedbackTitle = ""
+                    feedbackBody = ""
+                    feedbackService.reset()
+                    showFeedbackSheet = true
+                }
             }
         }
     }
