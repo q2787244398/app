@@ -219,8 +219,8 @@ final class WelfarePlatformConfigStore: ObservableObject {
 
     /// 策略 2：直接拉 manifest 中的 welfarePlatforms URL
     private func fetchFromDirectURL() async throws -> WelfarePlatformConfig {
-        // 1. 拉 manifest
-        let manifestURL = URL(string: RemoteSourceConfigManager.defaultManifestURL)!
+        // 1. 拉 manifest（使用用户可配置的默认源地址，而非内置静态常量）
+        let manifestURL = URL(string: RemoteSourceConfigManager.shared.defaultManifestURL)!
         let manifestData = try await fetchData(from: manifestURL)
 
         struct Manifest: Decodable {
