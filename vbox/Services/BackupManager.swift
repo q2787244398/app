@@ -83,7 +83,7 @@ enum ConflictStrategy: String, CaseIterable, Identifiable {
 
 // MARK: - 备份文件结构
 
-struct BackupMeta: Codable {
+struct BackupMeta: Codable, Sendable {
     var appName: String
     var appVersion: String
     var createdAt: Int64
@@ -92,7 +92,7 @@ struct BackupMeta: Codable {
     var device: String
 }
 
-struct BackupFileEnvelope: Codable {
+struct BackupFileEnvelope: Codable, Sendable {
     var schemaVersion: Int
     var meta: BackupMeta
     var encrypted: Bool
@@ -104,7 +104,7 @@ struct BackupFileEnvelope: Codable {
     var payload: String
 }
 
-struct BackupPayload: Codable {
+struct BackupPayload: Codable, Sendable {
     var account: String
     var categories: [String: Data]
 }
@@ -139,7 +139,7 @@ struct RemoteSourcesSnapshot: Codable {
 
 // MARK: - 错误与结果
 
-enum BackupError: LocalizedError {
+enum BackupError: LocalizedError, Sendable {
     case wrongPassword
     case schemaTooNew(Int)
     case invalidFormat(String)
@@ -217,7 +217,7 @@ final class BackupManager {
 
     // MARK: - 口令派生与加解密（AES-256-GCM + PBKDF2）
 
-    private static func deriveKey(password: String, salt: Data) -> SymmetricKey? {
+    private nonisolated static func deriveKey(password: String, salt: Data) -> SymmetricKey? {
         var key = [UInt8](repeating: 0, count: 32)
         let status = password.withCString { pw -> Int32 in
             salt.withUnsafeBytes { saltBuf -> Int32 in
@@ -241,7 +241,7 @@ final class BackupManager {
         return SymmetricKey(data: Data(key))
     }
 
-    private static func encrypt(_ data: Data, password: String) throws -> (salt: Data, iv: Data, tag: Data, ciphertext: Data) {
+    private nonisolated static func encrypt(_ data: Data, password: String) throws -> (salt: Data, iv: Data, tag: Data, ciphertext: Data) {
         let salt = Data((0..<saltLength).map { _ in UInt8.random(in: .min ... .max) })
         var ivBytes = [UInt8](repeating: 0, count: ivLength)
         guard SecRandomCopyBytes(kSecRandomDefault, ivBytes.count, &ivBytes) == errSecSuccess else {
@@ -255,7 +255,7 @@ final class BackupManager {
         return (salt, iv, sealed.tag, sealed.ciphertext)
     }
 
-    private static func decrypt(salt: Data, iv: Data, tag: Data, ciphertext: Data, password: String) throws -> Data {
+    private nonisolated static func decrypt(salt: Data, iv: Data, tag: Data, ciphertext: Data, password: String) throws -> Data {
         guard let key = deriveKey(password: password, salt: salt) else {
             throw BackupError.cryptoFailed("口令密钥派生失败")
         }
@@ -353,7 +353,7 @@ final class BackupManager {
 
     // MARK: - 生成备份文件
 
-    func createBackup(categories: [BackupCategory], password: String?) throws -> Data {
+    func createBackup(categories: [BackupCategory], password: String?) async throws -> Data {
         let account = DatabaseManager.shared.getSetting(key: "account")
             ?? DatabaseManager.shared.getSetting(key: "username")
             ?? ""
@@ -377,34 +377,38 @@ final class BackupManager {
             device: UIDevice.current.model
         )
 
-        if let password, !password.isEmpty {
-            let (salt, iv, tag, ciphertext) = try Self.encrypt(payloadData, password: password)
-            let envelope = BackupFileEnvelope(
-                schemaVersion: Self.supportedSchemaVersion,
-                meta: meta,
-                encrypted: true,
-                cipher: "AES-256-GCM",
-                kdf: "PBKDF2-HMAC-SHA256",
-                salt: salt.base64EncodedString(),
-                iv: iv.base64EncodedString(),
-                authTag: tag.base64EncodedString(),
-                payload: ciphertext.base64EncodedString()
-            )
-            return try JSONEncoder().encode(envelope)
-        } else {
-            let envelope = BackupFileEnvelope(
-                schemaVersion: Self.supportedSchemaVersion,
-                meta: meta,
-                encrypted: false,
-                cipher: nil,
-                kdf: nil,
-                salt: nil,
-                iv: nil,
-                authTag: nil,
-                payload: String(data: payloadData, encoding: .utf8) ?? ""
-            )
-            return try JSONEncoder().encode(envelope)
-        }
+        // PBKDF2(10万次迭代)+AES 加密 + envelope 编码为 CPU 密集段，放到后台执行器，避免主线程卡顿
+        let capturedPassword = password
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            if let password = capturedPassword, !password.isEmpty {
+                let (salt, iv, tag, ciphertext) = try Self.encrypt(payloadData, password: password)
+                let envelope = BackupFileEnvelope(
+                    schemaVersion: Self.supportedSchemaVersion,
+                    meta: meta,
+                    encrypted: true,
+                    cipher: "AES-256-GCM",
+                    kdf: "PBKDF2-HMAC-SHA256",
+                    salt: salt.base64EncodedString(),
+                    iv: iv.base64EncodedString(),
+                    authTag: tag.base64EncodedString(),
+                    payload: ciphertext.base64EncodedString()
+                )
+                return try JSONEncoder().encode(envelope)
+            } else {
+                let envelope = BackupFileEnvelope(
+                    schemaVersion: Self.supportedSchemaVersion,
+                    meta: meta,
+                    encrypted: false,
+                    cipher: nil,
+                    kdf: nil,
+                    salt: nil,
+                    iv: nil,
+                    authTag: nil,
+                    payload: String(data: payloadData, encoding: .utf8) ?? ""
+                )
+                return try JSONEncoder().encode(envelope)
+            }
+        }.value
     }
 
     // MARK: - 备份解析
@@ -419,31 +423,37 @@ final class BackupManager {
         return envelope
     }
 
-    private func decodePayload(envelope: BackupFileEnvelope, password: String?) throws -> BackupPayload {
-        let payloadData: Data
-        if envelope.encrypted {
-            guard let password, !password.isEmpty else { throw BackupError.emptyPassword }
-            guard let salt = Data(base64Encoded: envelope.salt ?? ""),
-                  let iv = Data(base64Encoded: envelope.iv ?? ""),
-                  let tag = Data(base64Encoded: envelope.authTag ?? ""),
-                  let ciphertext = Data(base64Encoded: envelope.payload) else {
-                throw BackupError.invalidFormat("加密字段缺失或损坏")
+    private func decodePayload(envelope: BackupFileEnvelope, password: String?) async throws -> BackupPayload {
+        // PBKDF2(10万次迭代)+AES+大块JSON解码为 CPU 密集操作；
+        // 放到后台执行器，避免在主线程长时间占用导致 UI 卡顿/看门狗终止
+        let capturedEnvelope = envelope
+        let capturedPassword = password
+        return try await Task.detached(priority: .userInitiated) { () -> BackupPayload in
+            let payloadData: Data
+            if capturedEnvelope.encrypted {
+                guard let password = capturedPassword, !password.isEmpty else { throw BackupError.emptyPassword }
+                guard let salt = Data(base64Encoded: capturedEnvelope.salt ?? ""),
+                      let iv = Data(base64Encoded: capturedEnvelope.iv ?? ""),
+                      let tag = Data(base64Encoded: capturedEnvelope.authTag ?? ""),
+                      let ciphertext = Data(base64Encoded: capturedEnvelope.payload) else {
+                    throw BackupError.invalidFormat("加密字段缺失或损坏")
+                }
+                do {
+                    payloadData = try Self.decrypt(salt: salt, iv: iv, tag: tag, ciphertext: ciphertext, password: password)
+                } catch {
+                    throw BackupError.wrongPassword
+                }
+            } else {
+                guard let data = capturedEnvelope.payload.data(using: .utf8) else {
+                    throw BackupError.invalidFormat("明文内容损坏")
+                }
+                payloadData = data
             }
-            do {
-                payloadData = try Self.decrypt(salt: salt, iv: iv, tag: tag, ciphertext: ciphertext, password: password)
-            } catch {
-                throw BackupError.wrongPassword
+            guard let payload = try? JSONDecoder().decode(BackupPayload.self, from: payloadData) else {
+                throw BackupError.invalidFormat("数据内容无法解析")
             }
-        } else {
-            guard let data = envelope.payload.data(using: .utf8) else {
-                throw BackupError.invalidFormat("明文内容损坏")
-            }
-            payloadData = data
-        }
-        guard let payload = try? JSONDecoder().decode(BackupPayload.self, from: payloadData) else {
-            throw BackupError.invalidFormat("数据内容无法解析")
-        }
-        return payload
+            return payload
+        }.value
     }
 
     // MARK: - 还原
@@ -454,7 +464,7 @@ final class BackupManager {
                  password: String?,
                  currentAccount: String) async throws -> BackupRestoreResult {
         let envelope = try parseEnvelope(data: backupData)
-        let payload = try decodePayload(envelope: envelope, password: password)
+        let payload = try await decodePayload(envelope: envelope, password: password)
 
         var result = BackupRestoreResult(restored: [], skippedCredentialAccountMismatch: false, skippedRemoteSourcesOutdated: false, totalCounts: [:])
 

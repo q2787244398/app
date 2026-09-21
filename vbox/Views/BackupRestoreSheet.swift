@@ -316,9 +316,10 @@ struct BackupRestoreSheet: View {
             return
         }
         isWorking = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        // 采集与加密为异步执行（加密移到后台执行器），避免阻塞主线程
+        Task { @MainActor in
             do {
-                let data = try BackupManager.shared.createBackup(
+                let data = try await BackupManager.shared.createBackup(
                     categories: Array(selectedCategories),
                     password: password.isEmpty ? nil : password
                 )
@@ -400,21 +401,27 @@ struct BackupRestoreSheet: View {
         defer {
             if didStart { url.stopAccessingSecurityScopedResource() }
         }
-        guard let data = try? Data(contentsOf: url) else {
-            print("[BackupRestore] 读取文件失败")
-            showAlert(title: "读取失败", message: "无法读取该文件，请确认文件未损坏")
-            return
-        }
-        print("[BackupRestore] 文件读取成功，\(data.count) bytes")
-        importedData = data
-        restorePassword = ""
-        do {
-            importedEnvelope = try BackupManager.shared.parseEnvelope(data: data)
-            print("[BackupRestore] 备份文件解析成功")
-        } catch {
-            importedEnvelope = nil
-            print("[BackupRestore] 备份文件解析失败: \(error)")
-            showAlert(title: "无法识别", message: error.localizedDescription)
+        // 读取大文件放到后台执行器，避免阻塞主线程；解析完成后回主线程更新 UI
+        Task(priority: .userInitiated) {
+            let data = try? Data(contentsOf: url)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard let data else {
+                    self.showAlert(title: "读取失败", message: "无法读取该文件，请确认文件未损坏")
+                    return
+                }
+                print("[BackupRestore] 文件读取成功，\(data.count) bytes")
+                self.importedData = data
+                self.restorePassword = ""
+                do {
+                    self.importedEnvelope = try BackupManager.shared.parseEnvelope(data: data)
+                    print("[BackupRestore] 备份文件解析成功")
+                } catch {
+                    self.importedEnvelope = nil
+                    print("[BackupRestore] 备份文件解析失败: \(error)")
+                    self.showAlert(title: "无法识别", message: error.localizedDescription)
+                }
+            }
         }
     }
 
