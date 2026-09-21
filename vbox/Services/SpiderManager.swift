@@ -5358,9 +5358,8 @@ globalThis.__JS_SPIDER__ = _spider;
     // MARK: - 音乐源专用方法
 
     /// 获取所有音乐源
-    @MainActor
     func getMusicSources() -> [SourceDisplayItem] {
-        let allItems = getSourceDisplayItems()
+        let allItems = fetchAllSourceDisplayItems()
         return allItems.filter { $0.category == .music }
     }
 
@@ -5389,7 +5388,7 @@ globalThis.__JS_SPIDER__ = _spider;
 
     /// 跨所有音乐源搜索（流式回调）
     func searchAllMusicSources(keyword: String, onBatch: @escaping ([VodItem]) -> Void) async {
-        let musicSources = await MainActor.run { getMusicSources() }
+        let musicSources = getMusicSources()
         guard !musicSources.isEmpty else {
             print("[SpiderManager] musicSearchAll: 无音乐源")
             return

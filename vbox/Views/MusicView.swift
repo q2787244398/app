@@ -1,9 +1,11 @@
 import SwiftUI
+import UIKit
 
 // MARK: - 网络音乐浏览页
 
 struct MusicView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: AppSettings
     @StateObject private var viewModel = MusicViewModel()
     @State private var selectedSource: SourceDisplayItem?
     @State private var selectedCategory: VodCategory?
@@ -11,7 +13,6 @@ struct MusicView: View {
     @State private var showSearch: Bool = false
 
     private var accentColor: Color {
-        let settings = AppSettings.shared
         if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
         if settings.usesFrostedSkin { return Color(hex: "7C3AED") }
         return Color(hex: "E11D48")
@@ -32,7 +33,8 @@ struct MusicView: View {
                         onClear: { showSearch = false; searchText = ""; viewModel.clearSearch() },
                         results: viewModel.searchResults,
                         isLoading: viewModel.isSearching,
-                        onPlay: { item in playItem(item) }
+                        onPlay: { item in playItem(item) },
+                        accentColor: accentColor
                     )
                 } else if selectedSource == nil && viewModel.musicSources.isEmpty {
                     emptyState
@@ -284,13 +286,7 @@ struct MusicSearchView: View {
     let results: [VodItem]
     let isLoading: Bool
     let onPlay: (VodItem) -> Void
-
-    private var accentColor: Color {
-        let settings = AppSettings.shared
-        if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
-        if settings.usesFrostedSkin { return Color(hex: "7C3AED") }
-        return Color(hex: "E11D48")
-    }
+    let accentColor: Color
 
     var body: some View {
         VStack(spacing: 0) {
@@ -482,11 +478,8 @@ final class MusicViewModel: ObservableObject {
         // 播放地址可能包含多线路，格式: 线路1$url1#线路2$url2
         let playItems = parsePlayUrl(url, playFrom: playFrom)
         if let firstItem = playItems.first {
-            await MainActor.run {
-                // 简单播放：用系统播放器打开
-                if let playURL = URL(string: firstItem.url) {
-                    UIApplication.shared.open(playURL)
-                }
+            if let playURL = URL(string: firstItem.url) {
+                UIApplication.shared.open(playURL)
             }
         }
     }
