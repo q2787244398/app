@@ -385,6 +385,7 @@
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
+		A10204 /* BaiduWebViewBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10204 /* BaiduWebViewBridge.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -784,6 +785,7 @@
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
+		B10204 /* BaiduWebViewBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaiduWebViewBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1987,6 +1989,7 @@
 				NODEC0DE0209 /* NodeSpiderEngine.swift */,
 				B10132 /* BackupManager.swift */,
 				B10134 /* AudioPlayerManager.swift */,
+				B10204 /* BaiduWebViewBridge.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -2503,6 +2506,7 @@
 				EB93E65B715CC1EC79FB1263 /* GoProxyManager.swift in Sources */,
 				F673B656D5F91087C52FA765 /* GoProxyManager.swift in Sources */,
 				6ABEB9FD82616993A029E8B1 /* GoProxyManager.swift in Sources */,
+				A10204 /* BaiduWebViewBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

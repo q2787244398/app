@@ -10,6 +10,7 @@ new_ids = {
     "MusicView.swift": ("B10133", "A10133", "Views"),
     "AudioPlayerManager.swift": ("B10134", "A10134", "Services"),
     "MusicPlayerViews.swift": ("B10135", "A10135", "Views"),
+    "BaiduWebViewBridge.swift": ("B10204", "A10204", "Services"),
 }
 
 # 幂等：跳过已登记的文件
