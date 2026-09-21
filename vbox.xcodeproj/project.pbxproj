@@ -2373,11 +2373,11 @@
 				273B835636BEC05CE1B3656E /* GoProxyManager.swift in Sources */,
 				27B32EB552314616726721DA /* GoProxyManager.swift in Sources */,
 				279795717FB5EC43A4906D85 /* GoProxyManager.swift in Sources */,
+				A10132 /* BackupManager.swift in Sources */,
+				A10131 /* BackupRestoreSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-				A10132 /* BackupManager.swift in Sources */,
-				A10131 /* BackupRestoreSheet.swift in Sources */,
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */

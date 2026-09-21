@@ -50,13 +50,23 @@ for group_name in ("Views", "Services"):
 
     content = re.sub(pat, add_member, content, count=1, flags=re.DOTALL)
 
-# Sources phase
+# Sources phase（插入到 build phase 字典内部、闭合括号之前；并清理历史游离行）
 if pending:
-    idx = content.find("/* End PBXSourcesBuildPhase section */")
+    orphan_re = re.compile(r"^\t+\t\t\t\t(?:[A-Z0-9]+) /\* .* in Sources \*/,\n(?=/\* End PBXSourcesBuildPhase section \*/)", re.M)
+    content = orphan_re.sub("", content)
+
+    idx = content.find("/* Begin PBXSourcesBuildPhase section */")
+    end = content.find("/* End PBXSourcesBuildPhase section */", idx)
+    segment = content[idx:end]
+    # 定位该段内 Sources build phase 的闭合括号：最后一个 ");"（带 buildPhase 缩进）
+    close = segment.rfind("\t\t\t);")
+    if close == -1:
+        raise SystemExit("FATAL: 找不到 PBXSourcesBuildPhase 闭合括号")
+    abs_close = idx + close
     extra = ""
     for name, (fr, bf, _) in pending.items():
         extra += f"\t\t\t\t{bf} /* {name} in Sources */,\n"
-    content = content[:idx] + extra + content[idx:]
+    content = content[:abs_close] + extra + content[abs_close:]
 
 with open("vbox.xcodeproj/project.pbxproj", "w") as f:
     f.write(content)
