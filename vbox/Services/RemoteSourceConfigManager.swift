@@ -263,6 +263,12 @@ final class RemoteSourceConfigManager: ObservableObject {
         return try? encoder.encode(cloudSources)
     }
 
+    /// 供非 MainActor 上下文读取用户可配置的默认 manifest URL。
+    /// 与 shared.defaultManifestURL 共用同一个 UserDefaults 键，保证与 @Published 值一致。
+    nonisolated static func currentDefaultManifestURL() -> String {
+        UserDefaults.standard.string(forKey: RemoteSourceConfigKeys.defaultManifestURL) ?? Self.defaultManifestURL
+    }
+
     nonisolated static func cachedCloudSitesDataForBackground() -> Data? {
         let fileManager = FileManager.default
         guard let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }

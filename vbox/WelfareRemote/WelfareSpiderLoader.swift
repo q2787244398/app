@@ -140,7 +140,7 @@ final class WelfareSpiderLoader {
             return absolute
         }
 
-        let manifest = URL(string: RemoteSourceConfigManager.shared.defaultManifestURL)!
+        let manifest = URL(string: RemoteSourceConfigManager.currentDefaultManifestURL())!
         let normalized = trimmed
             .replacingOccurrences(of: "\\", with: "/")
             .replacingOccurrences(of: "./", with: "")
