@@ -219,8 +219,14 @@ final class WelfarePlatformConfigStore: ObservableObject {
 
     /// 策略 2：直接拉 manifest 中的 welfarePlatforms URL
     private func fetchFromDirectURL() async throws -> WelfarePlatformConfig {
-        // 1. 拉 manifest（使用用户可配置的默认源地址，而非内置静态常量）
-        let manifestURL = URL(string: RemoteSourceConfigManager.shared.defaultManifestURL)!
+        // 1. 拉 manifest（使用用户可配置的默认源地址，空值自动回退内置默认，避免 URL(string:)! 崩溃）
+        let manifestURLString = RemoteSourceConfigManager.currentDefaultManifestURL()
+        guard let manifestURL = URL(string: manifestURLString) else {
+            throw NSError(
+                domain: "WelfareRemote", code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "默认源地址无效：\(manifestURLString)"]
+            )
+        }
         let manifestData = try await fetchData(from: manifestURL)
 
         struct Manifest: Decodable {

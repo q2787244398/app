@@ -140,7 +140,10 @@ final class WelfareSpiderLoader {
             return absolute
         }
 
-        let manifest = URL(string: RemoteSourceConfigManager.currentDefaultManifestURL())!
+        // 空/无效的默认源地址回退内置默认，仍解析失败则交给调用方走 invalidRemoteURL 错误
+        guard let manifest = URL(string: RemoteSourceConfigManager.currentDefaultManifestURL()) else {
+            return nil
+        }
         let normalized = trimmed
             .replacingOccurrences(of: "\\", with: "/")
             .replacingOccurrences(of: "./", with: "")
