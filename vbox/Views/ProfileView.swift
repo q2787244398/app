@@ -83,6 +83,7 @@ struct ProfileView: View {
     @State private var showBackupRestore: Bool = false
     @State private var showFeedbackSheet: Bool = false
     @State private var showLogoutConfirm: Bool = false
+    @State private var showMusicView: Bool = false
     @State private var feedbackTitle: String = ""
     @State private var feedbackBody: String = ""
     @StateObject private var feedbackService = FeedbackService.shared
@@ -157,6 +158,9 @@ struct ProfileView: View {
                 NavigationView {
                     BackupRestoreSheet(currentAccount: account)
                 }
+            }
+            .sheet(isPresented: $showMusicView) {
+                MusicView()
             }
             .onChange(of: selectedPhotoItem) { _ in
                 handlePhotoSelection()
@@ -462,9 +466,9 @@ struct ProfileView: View {
                     }
                 }
 
-                // 网络音乐（功能展位，为后期音乐栏目预留入口）
+                // 网络音乐
                 featureButton(icon: "music.note", title: "网络音乐") {
-                    // 预留：后续接入音乐栏目
+                    showMusicView = true
                 }
 
                 // Bug 反馈

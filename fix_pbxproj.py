@@ -7,6 +7,7 @@ with open("vbox.xcodeproj/project.pbxproj", "r") as f:
 new_ids = {
     "BackupManager.swift": ("B10132", "A10132", "Services"),
     "BackupRestoreSheet.swift": ("B10131", "A10131", "Views"),
+    "MusicView.swift": ("B10133", "A10133", "Views"),
 }
 
 # 幂等：跳过已登记的文件

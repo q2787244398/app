@@ -2032,22 +2032,22 @@ globalThis.__JS_SPIDER__ = _spider;
                 return []
             }
 
-        case .jsSpider:
+        case .jsSpider, .music:
             guard let key = source.engineKey, let engine = engines[key] else {
-                print("[SpiderManager] jsSpiderCategory[\(source.name)] 引擎未找到: engineKey=\(source.engineKey ?? "nil")")
+                print("[SpiderManager] spiderCategory[\(source.name)] 引擎未找到: engineKey=\(source.engineKey ?? "nil")")
                 return []
             }
             // 🔧 修复: 单源分类加载前等待 Node 常驻系统就绪，避免切换源时分类数据为空
             await waitForNodeReadyIfNeeded()
             do {
-                print("[SpiderManager] jsSpiderCategory[\(source.name)] 请求分类: tid=\(categoryTypeId), pg=\(page)")
+                print("[SpiderManager] spiderCategory[\(source.name)] 请求分类: tid=\(categoryTypeId), pg=\(page)")
                 let result = try engine.callCategoryContent(tid: categoryTypeId, pg: page, extend: "{}")
                 var list = result.list ?? []
                 for i in 0..<list.count { list[i].engineKey = key }
-                print("[SpiderManager] jsSpiderCategory[\(source.name)] 返回 \(list.count) 条数据")
+                print("[SpiderManager] spiderCategory[\(source.name)] 返回 \(list.count) 条数据")
                 return list
             } catch {
-                print("[SpiderManager] jsSpiderCategory[\(source.name)] 失败: \(error)")
+                print("[SpiderManager] spiderCategory[\(source.name)] 失败: \(error)")
                 return []
             }
 
@@ -4655,19 +4655,35 @@ globalThis.__JS_SPIDER__ = _spider;
 
         // 3. JS 蜘蛛
         for (key, _) in engines {
-            if items.contains(where: { $0.id == "js_\(key)" }) { continue }
+            if items.contains(where: { $0.id == "js_\(key)" || $0.id == "music_\(key)" }) { continue }
             let siteConfig = allSites.first(where: { $0.key == key })
-            items.append(SourceDisplayItem(
-                id: "js_\(key)",
-                name: siteConfig?.name ?? key,
-                category: .jsSpider,
-                supportsHome: true,
-                api: nil,
-                searchUrl: nil,
-                engineKey: key,
-                referer: nil,
-                siteKey: key
-            ))
+            // 音乐源识别：Key 前缀 nodejs_musicai 或 SiteConfig.group == "music"
+            let isMusic = key.hasPrefix("nodejs_musicai") || siteConfig?.group == "music"
+            if isMusic {
+                items.append(SourceDisplayItem(
+                    id: "music_\(key)",
+                    name: siteConfig?.name ?? key,
+                    category: .music,
+                    supportsHome: true,
+                    api: nil,
+                    searchUrl: nil,
+                    engineKey: key,
+                    referer: nil,
+                    siteKey: key
+                ))
+            } else {
+                items.append(SourceDisplayItem(
+                    id: "js_\(key)",
+                    name: siteConfig?.name ?? key,
+                    category: .jsSpider,
+                    supportsHome: true,
+                    api: nil,
+                    searchUrl: nil,
+                    engineKey: key,
+                    referer: nil,
+                    siteKey: key
+                ))
+            }
         }
 
         // 4. 站源（zhanyuan）
@@ -4891,7 +4907,7 @@ globalThis.__JS_SPIDER__ = _spider;
         switch source.category {
         case .cloudCMS, .api, .zhanyuan:
             return await fetchAPIHomeData(source: source)
-        case .jsSpider:
+        case .jsSpider, .music:
             return await fetchJSSpiderHomeData(source: source)
         case .cloudForum, .cloudSPA:
             return nil  // 不支持首页，降级为搜索入口
@@ -5331,11 +5347,85 @@ globalThis.__JS_SPIDER__ = _spider;
                 sourceName: source.name,
                 categories: categories,
                 recommended: list,
-                sourceType: .jsSpider
+                sourceType: source.category
             )
         } catch {
             print("[SpiderManager] fetchJSSpiderHome[\(source.name)] 失败: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    // MARK: - 音乐源专用方法
+
+    /// 获取所有音乐源
+    @MainActor
+    func getMusicSources() -> [SourceDisplayItem] {
+        let allItems = getSourceDisplayItems()
+        return allItems.filter { $0.category == .music }
+    }
+
+    /// 在单个音乐源中搜索
+    func searchInMusicSource(source: SourceDisplayItem, keyword: String, pg: Int = 1) async -> [VodItem] {
+        guard source.category == .music,
+              let key = source.engineKey,
+              let engine = engines[key] else { return [] }
+
+        await waitForNodeReadyIfNeeded()
+        do {
+            let result = try engine.callSearchContent(keyword: keyword, pg: pg)
+            var list = result.list ?? []
+            for i in 0..<list.count {
+                list[i].engineKey = key
+                if list[i].vodRemarks == nil || list[i].vodRemarks?.isEmpty == true {
+                    list[i].vodRemarks = source.name
+                }
+            }
+            return list
+        } catch {
+            print("[SpiderManager] musicSearch[\(source.name)] 失败: \(error)")
+            return []
+        }
+    }
+
+    /// 跨所有音乐源搜索（流式回调）
+    func searchAllMusicSources(keyword: String, onBatch: @escaping ([VodItem]) -> Void) async {
+        let musicSources = await MainActor.run { getMusicSources() }
+        guard !musicSources.isEmpty else {
+            print("[SpiderManager] musicSearchAll: 无音乐源")
+            return
+        }
+
+        await withTaskGroup(of: [VodItem].self) { group in
+            for source in musicSources {
+                group.addTask {
+                    let items = await self.searchInMusicSource(source: source, keyword: keyword)
+                    print("[SpiderManager] musicSearchAll[\(source.name)]: \(items.count) 条")
+                    return items
+                }
+            }
+            for await items in group {
+                if !items.isEmpty {
+                    onBatch(items)
+                }
+            }
+        }
+    }
+
+    /// 获取单个音乐源的播放地址
+    func fetchMusicPlayUrl(source: SourceDisplayItem, vodId: String) async -> (playUrl: String?, playFrom: String?) {
+        guard source.category == .music,
+              let key = source.engineKey,
+              let engine = engines[key] else { return (nil, nil) }
+
+        await waitForNodeReadyIfNeeded()
+        do {
+            let result = try engine.callDetailContent(ids: vodId)
+            if let item = result.list?.first {
+                return (item.vodPlayUrl, item.vodPlayFrom)
+            }
+        } catch {
+            print("[SpiderManager] musicDetail[\(source.name)] 失败: \(error)")
+        }
+        return (nil, nil)
     }
 }

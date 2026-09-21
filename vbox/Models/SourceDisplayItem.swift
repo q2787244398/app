@@ -9,6 +9,7 @@ enum SourceCategory: String, Codable, CaseIterable {
     case api         // API 源（ibox + 订阅 + 兜底）
     case jsSpider    // JS 蜘蛛
     case zhanyuan    // 站源（Apple CMS）
+    case music       // 音乐源（NodeJS 音乐蜘蛛引擎）
 
     var displayName: String {
         switch self {
@@ -18,12 +19,13 @@ enum SourceCategory: String, Codable, CaseIterable {
         case .api:        return "API"
         case .jsSpider:   return "JS"
         case .zhanyuan:   return "站源"
+        case .music:      return "音乐"
         }
     }
 
     var supportsHome: Bool {
         switch self {
-        case .cloudCMS, .api, .jsSpider, .zhanyuan: return true
+        case .cloudCMS, .api, .jsSpider, .zhanyuan, .music: return true
         case .cloudForum, .cloudSPA: return false
         }
     }
@@ -37,6 +39,7 @@ enum SourceCategory: String, Codable, CaseIterable {
         case .api:        return 3
         case .jsSpider:   return 4
         case .zhanyuan:   return 5
+        case .music:      return 6
         }
     }
 }

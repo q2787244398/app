@@ -90,15 +90,24 @@ struct BackupRestoreSheet: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
-                handleImport(result)
-            }
-            .fileExporter(isPresented: $showExporter,
-                          document: exportDocument,
-                          contentType: .json,
-                          defaultFilename: exportFilename) { _ in
-                exportDocument = nil
-            }
+            // fileImporter 和 fileExporter 分挂不同子视图，避免 SwiftUI 同时挂载时回调不触发
+            .background(
+                Color.clear
+                    .frame(width: 0, height: 0)
+                    .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json, .item]) { result in
+                        handleImport(result)
+                    }
+            )
+            .background(
+                Color.clear
+                    .frame(width: 0, height: 0)
+                    .fileExporter(isPresented: $showExporter,
+                                  document: exportDocument,
+                                  contentType: .json,
+                                  defaultFilename: exportFilename) { _ in
+                        exportDocument = nil
+                    }
+            )
             .alert(alertTitle, isPresented: $showAlert) {
                 Button("好", role: .cancel) {}
             } message: {
@@ -371,18 +380,24 @@ struct BackupRestoreSheet: View {
     private func handleImport(_ result: Result<URL, Error>) {
         switch result {
         case .success(let url):
+            print("[BackupRestore] fileImporter 回调成功: \(url.lastPathComponent)")
             let didStart = url.startAccessingSecurityScopedResource()
-            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
             guard let data = try? Data(contentsOf: url) else {
+                if didStart { url.stopAccessingSecurityScopedResource() }
+                print("[BackupRestore] 读取文件失败")
                 showAlert(title: "读取失败", message: "无法读取该文件，请确认文件未损坏")
                 return
             }
+            if didStart { url.stopAccessingSecurityScopedResource() }
+            print("[BackupRestore] 文件读取成功，\(data.count) bytes")
             importedData = data
             restorePassword = ""
             do {
                 importedEnvelope = try BackupManager.shared.parseEnvelope(data: data)
+                print("[BackupRestore] 备份文件解析成功")
             } catch {
                 importedEnvelope = nil
+                print("[BackupRestore] 备份文件解析失败: \(error)")
                 showAlert(title: "无法识别", message: error.localizedDescription)
             }
         case .failure(let error):
