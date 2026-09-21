@@ -5,7 +5,7 @@ import AVFoundation
 
 struct MusicView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var settings: AppSettings
+    @StateObject private var settings = AppSettings()
     @StateObject private var viewModel = MusicViewModel()
     @State private var selectedSource: SourceDisplayItem?
     @State private var selectedCategory: VodCategory?
@@ -167,23 +167,44 @@ struct MusicView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(viewModel.songs, id: \.vodId) { song in
-                        MusicRowView(song: song, accentColor: accentColor) {
-                            playItem(song)
+                    Section {
+                        ForEach(viewModel.songs, id: \.vodId) { song in
+                            MusicRowView(song: song, accentColor: accentColor) {
+                                playItem(song)
+                            }
                         }
-                    }
-                    if viewModel.hasMore && !viewModel.songs.isEmpty {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .tint(accentColor)
-                            Text("加载更多...")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                            Spacer()
+                        if viewModel.hasMore && !viewModel.songs.isEmpty {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .tint(accentColor)
+                                Text("加载更多...")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                            .onAppear {
+                                Task { await viewModel.loadMore() }
+                            }
                         }
-                        .onAppear {
-                            Task { await viewModel.loadMore() }
+                    } header: {
+                        if !viewModel.songs.isEmpty {
+                            HStack {
+                                Text("共 \(viewModel.songs.count) 首")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button(action: { playAll() }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 11))
+                                        Text("播放全部")
+                                            .font(.system(size: 13, weight: .medium))
+                                    }
+                                    .foregroundColor(accentColor)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }

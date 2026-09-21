@@ -6,9 +6,9 @@ import AVFoundation
 struct MiniPlayerBar: View {
     @ObservedObject private var player = AudioPlayerManager.shared
     @State private var dragOffset: CGFloat = 0
+    @StateObject private var settings = AppSettings()
 
     private var accentColor: Color {
-        let settings = AppSettings()
         if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
         if settings.usesFrostedSkin { return Color(hex: "7C3AED") }
         return Color(hex: "E11D48")
@@ -102,11 +102,11 @@ struct MiniPlayerBar: View {
 struct MusicPlayerFullView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var player = AudioPlayerManager.shared
+    @StateObject private var settings = AppSettings()
     @State private var seekValue: Double = 0
     @State private var isSeeking: Bool = false
 
     private var accentColor: Color {
-        let settings = AppSettings()
         if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
         if settings.usesFrostedSkin { return Color(hex: "7C3AED") }
         return Color(hex: "E11D48")

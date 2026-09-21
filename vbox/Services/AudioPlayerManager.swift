@@ -28,7 +28,7 @@ enum MusicRepeatMode: Int, CaseIterable {
 
 // MARK: - 队列条目
 
-struct MusicQueueItem: Identifiable, Equatable {
+struct MusicQueueItem: Identifiable, Equatable, Codable {
     let id: String          // vodId
     let name: String        // 歌名
     let artist: String      // 来源/歌手
@@ -91,10 +91,12 @@ final class AudioPlayerManager: NSObject, ObservableObject {
     func setQueue(_ items: [MusicQueueItem], startIndex: Int = 0) {
         queue = items
         currentIndex = startIndex
+        saveQueue()
     }
 
     func addToQueue(_ item: MusicQueueItem) {
         queue.append(item)
+        saveQueue()
     }
 
     func removeFromQueue(at index: Int) {
@@ -105,6 +107,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
         } else if index == currentIndex {
             stop()
         }
+        saveQueue()
     }
 
     // MARK: - 播放控制
@@ -118,12 +121,14 @@ final class AudioPlayerManager: NSObject, ObservableObject {
             currentIndex = queue.firstIndex(where: { $0.id == item.id }) ?? 0
         }
 
+        saveQueue()
         startPlayback()
     }
 
     func playQueue(_ items: [MusicQueueItem], startIndex: Int = 0) {
         queue = items
         currentIndex = startIndex
+        saveQueue()
         startPlayback()
     }
 
@@ -206,9 +211,14 @@ final class AudioPlayerManager: NSObject, ObservableObject {
     }
 
     func resume() {
-        player?.play()
-        isPlaying = true
-        updateNowPlayingInfo()
+        if player == nil {
+            // 播放器为空（如队列恢复后），重新初始化播放
+            startPlayback()
+        } else {
+            player?.play()
+            isPlaying = true
+            updateNowPlayingInfo()
+        }
     }
 
     func togglePlayPause() {
@@ -222,6 +232,17 @@ final class AudioPlayerManager: NSObject, ObservableObject {
         currentTime = 0
         duration = 0
         cleanupObservers()
+
+        // 清空队列，使 MiniPlayerBar 自动隐藏
+        queue = []
+        currentIndex = -1
+        saveQueue()
+
+        // 停用 AudioSession，避免影响视频播放器
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+
+        // 清除锁屏控制信息
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     func seek(to seconds: Double) {
@@ -243,6 +264,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
                 currentIndex += 1
                 if currentIndex >= queue.count { currentIndex = 0 }
             }
+            saveQueue()
             startPlayback()
         }
     }
@@ -250,7 +272,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
     func playPrevious() {
         guard !queue.isEmpty else { return }
         if currentTime > 3 {
-            // 前 3 秒内按上一首，否则从头播放
+            // 超过 3 秒则从头播放
             seek(to: 0)
             return
         }
@@ -260,6 +282,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
             currentIndex -= 1
             if currentIndex < 0 { currentIndex = queue.count - 1 }
         }
+        saveQueue()
         startPlayback()
     }
 
