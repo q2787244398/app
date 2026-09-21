@@ -2796,7 +2796,9 @@ globalThis.__JS_SPIDER__ = _spider;
         let fileManager = FileManager.default
 
         // 优先加载远程默认源缓存 cloud_sources.json
-        if let data = RemoteSourceConfigManager.shared.cachedCloudSitesData() {
+        // 受"启用远程默认源"开关门控：关闭开关时，网盘源与 API/蜘蛛源一并隐藏
+        if RemoteSourceConfigManager.shared.remoteDefaultSourceEnabled,
+           let data = RemoteSourceConfigManager.shared.cachedCloudSitesData() {
             do {
                 let wrapper = try JSONDecoder().decode(CloudSitesWrapper.self, from: data)
                 print("[SpiderManager] ✅ 从远程默认源缓存加载网盘源，共 \(wrapper.cloudSites.count) 个站点")
@@ -4734,11 +4736,12 @@ globalThis.__JS_SPIDER__ = _spider;
         return "\(scheme)://\(host)/"
     }
 
-    private nonisolated static func loadCloudSitesForDisplayOffMain(remoteData: Data?, bundleSourcesEnabled: Bool) -> [CloudSiteConfig] {
+    private nonisolated static func loadCloudSitesForDisplayOffMain(remoteData: Data?, bundleSourcesEnabled: Bool, remoteDefaultSourceEnabled: Bool) -> [CloudSiteConfig] {
         let decoder = JSONDecoder()
         let fileManager = FileManager.default
 
-        if let remoteData = remoteData {
+        // 受"启用远程默认源"开关门控：关闭开关时，网盘源与 API/蜘蛛源一并隐藏
+        if remoteDefaultSourceEnabled, let remoteData = remoteData {
             do {
                 let wrapper = try decoder.decode(CloudSitesWrapper.self, from: remoteData)
                 print("[SpiderManager] ✅ 后台从远程默认源缓存加载网盘源，共 \(wrapper.cloudSites.count) 个站点")
@@ -4884,13 +4887,18 @@ globalThis.__JS_SPIDER__ = _spider;
         let allSitesSnapshot = allSites
         let engineKeysSnapshot = Array(engines.keys)
         let bundleSourcesEnabled = UserDefaults.standard.object(forKey: RemoteSourceConfigKeys.bundleSourcesEnabled) as? Bool ?? false
+        let remoteDefaultSourceEnabled = RemoteSourceConfigManager.shared.remoteDefaultSourceEnabled
 
         let result = await withCheckedContinuation { (continuation: CheckedContinuation<[SourceDisplayItem], Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
-                let remoteCloudSitesData = RemoteSourceConfigManager.cachedCloudSitesDataForBackground()
+                // 受"启用远程默认源"开关门控：关闭开关时不再加载远程网盘源
+                let remoteCloudSitesData = remoteDefaultSourceEnabled
+                    ? RemoteSourceConfigManager.cachedCloudSitesDataForBackground()
+                    : nil
                 let cloudSites = Self.loadCloudSitesForDisplayOffMain(
                     remoteData: remoteCloudSitesData,
-                    bundleSourcesEnabled: bundleSourcesEnabled
+                    bundleSourcesEnabled: bundleSourcesEnabled,
+                    remoteDefaultSourceEnabled: remoteDefaultSourceEnabled
                 )
                 let zhanyuanSites = DatabaseManager.shared.queryAllZhanyuanSites()
                 let items = Self.buildSourceDisplayItemsOffMain(
