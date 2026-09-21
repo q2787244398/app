@@ -82,6 +82,7 @@ struct ProfileView: View {
     @State private var showCloudDriveSort: Bool = false
     @State private var showBackupRestore: Bool = false
     @State private var showFeedbackSheet: Bool = false
+    @State private var showLogoutConfirm: Bool = false
     @State private var feedbackTitle: String = ""
     @State private var feedbackBody: String = ""
     @StateObject private var feedbackService = FeedbackService.shared
@@ -215,6 +216,12 @@ struct ProfileView: View {
         .sheet(isPresented: $showFeedbackSheet) {
             feedbackSheet
         }
+        .alert("退出登录", isPresented: $showLogoutConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("退出", role: .destructive) { performLogout() }
+        } message: {
+            Text("退出后需要重新输入账号密码登录，本机已保存的密码不会删除。")
+        }
     }
 
     // MARK: - 头部登录区
@@ -292,6 +299,19 @@ struct ProfileView: View {
                 Text("账号：\(account)")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+
+                // 退出登录
+                Button(action: { showLogoutConfirm = true }) {
+                    Text("退出登录")
+                        .font(.system(size: 14))
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(16)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
 
             // 登录按钮
@@ -777,6 +797,16 @@ struct ProfileView: View {
                 }
             }
         }
+    }
+
+    private func performLogout() {
+        // 清除登录态（保留本机已保存的密码与头像，便于重新登录）
+        DatabaseManager.shared.setSetting(key: "isLoggedIn", value: "false")
+        DatabaseManager.shared.setSetting(key: "account", value: "")
+        DatabaseManager.shared.setSetting(key: "username", value: "")
+        isLoggedIn = false
+        account = ""
+        username = ""
     }
 
     private func loadInitialState() {
