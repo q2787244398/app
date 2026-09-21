@@ -184,6 +184,7 @@ private struct SourceRow: View {
         case .api: return Color(hex: "34C759")
         case .jsSpider: return Color(hex: "AF52DE")
         case .zhanyuan: return Color(hex: "FF3B30")
+        case .music: return Color(hex: "FF2D92")
         }
     }
 
@@ -194,6 +195,7 @@ private struct SourceRow: View {
         case .api: return "antenna.radiowaves.left.and.right"
         case .jsSpider: return "gearshape.2.fill"
         case .zhanyuan: return "link"
+        case .music: return "music.note"
         }
     }
 }

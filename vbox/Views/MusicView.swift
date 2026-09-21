@@ -479,7 +479,9 @@ final class MusicViewModel: ObservableObject {
         let playItems = parsePlayUrl(url, playFrom: playFrom)
         if let firstItem = playItems.first {
             if let playURL = URL(string: firstItem.url) {
-                UIApplication.shared.open(playURL)
+                await MainActor.run {
+                    UIApplication.shared.open(playURL)
+                }
             }
         }
     }

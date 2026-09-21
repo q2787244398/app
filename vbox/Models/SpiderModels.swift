@@ -155,7 +155,7 @@ struct LiveConfig: Codable {
 }
 
 // MARK: - 视频数据模型
-struct VodCategory: Codable, Identifiable {
+struct VodCategory: Codable, Identifiable, Equatable {
     var id: String { typeId }
     let typeId: String
     let typeName: String
