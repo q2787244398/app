@@ -572,8 +572,8 @@ struct HomeView: View {
                     }
                 }
             }
-            .frame(width: UIScreen.main.bounds.width * 0.4,
-                   maxHeight: UIScreen.main.bounds.height * 0.5)
+            .frame(width: UIScreen.main.bounds.width * 0.4)
+            .frame(maxHeight: UIScreen.main.bounds.height * 0.5)
             .background(homeDropdownBackground)
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)

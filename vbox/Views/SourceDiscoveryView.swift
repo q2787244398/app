@@ -278,8 +278,8 @@ struct SourceDiscoveryView: View {
                     }
                 }
             }
-            .frame(width: screenWidth * 0.4,
-                   maxHeight: screenHeight * 0.5)
+            .frame(width: screenWidth * 0.4)
+            .frame(maxHeight: screenHeight * 0.5)
             .background(dropdownBackground)
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
