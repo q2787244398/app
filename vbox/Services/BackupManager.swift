@@ -38,7 +38,7 @@ enum BackupCategory: String, CaseIterable, Identifiable {
         case .downloads: return "下载列表与进度（不含本地文件）"
         case .subscriptions: return "订阅的源地址列表"
         case .siteConfigs: return "站点、解析设置等配置"
-        case .personalSettings: return "用户名、头像、外观、TMDB 等（不含福利）"
+        case .personalSettings: return "用户名、头像、外观、TMDB 等（福利数据需口令备份）"
         case .searchHistory: return "搜索关键词记录"
         case .cloudCredentials: return "网盘授权令牌，敏感数据，默认关闭"
         }
@@ -176,16 +176,21 @@ final class BackupManager {
         case int
     }
 
-    /// 个人设置 UserDefaults 白名单（与 AppSettings 键保持一致；福利/远程源键不参与）
-    private static let settingsDefaultKeys: [(key: String, type: SettingType)] = [
-        ("app_skin_mode", .string),
-        ("app_skin_follows_system", .bool),
-        ("app_enable_tmdb", .bool),
-        ("app_tmdb_proxy_url", .string),
-        ("app_tmdb_use_token", .bool),
-        ("app_tmdb_proxy_token", .string),
-        ("app_dev_log_enabled", .bool),
-        ("app_dev_log_level", .int),
+    /// 个人设置 UserDefaults 白名单（与 AppSettings 键保持一致；远程源键不参与）。
+    /// isWelfare = true 的键为福利数据（解锁状态/口令/开关），仅在备份设置了口令（加密）时采集与还原。
+    private static let settingsDefaultKeys: [(key: String, type: SettingType, isWelfare: Bool)] = [
+        ("app_skin_mode", .string, false),
+        ("app_skin_follows_system", .bool, false),
+        ("app_enable_tmdb", .bool, false),
+        ("app_tmdb_proxy_url", .string, false),
+        ("app_tmdb_use_token", .bool, false),
+        ("app_tmdb_proxy_token", .string, false),
+        ("app_dev_log_enabled", .bool, false),
+        ("app_dev_log_level", .int, false),
+        // 福利数据：需口令保护，仅加密备份包含
+        ("app_welfare_unlocked", .bool, true),
+        ("app_welfare_password", .string, true),
+        ("app_welfare_enabled", .bool, true),
     ]
 
     private init() {}
@@ -240,7 +245,7 @@ final class BackupManager {
 
     // MARK: - 备份采集
 
-    func collectCategory(_ category: BackupCategory) throws -> Data? {
+    func collectCategory(_ category: BackupCategory, includeWelfare: Bool = false) throws -> Data? {
         switch category {
         case .watchHistory:
             return try JSONEncoder().encode(DatabaseManager.shared.queryHistory())
@@ -257,7 +262,7 @@ final class BackupManager {
                 jiexi: DatabaseManager.shared.queryJiexiSettings()
             ))
         case .personalSettings:
-            return try JSONEncoder().encode(collectPersonalSettings())
+            return try JSONEncoder().encode(collectPersonalSettings(includeWelfare: includeWelfare))
         case .searchHistory:
             return try JSONEncoder().encode(DatabaseManager.shared.querySearchHistory(limit: 100))
         case .cloudCredentials:
@@ -267,10 +272,12 @@ final class BackupManager {
         }
     }
 
-    private func collectPersonalSettings() -> PersonalSettingsSnapshot {
+    private func collectPersonalSettings(includeWelfare: Bool) -> PersonalSettingsSnapshot {
         let defaults = UserDefaults.standard
         var dict: [String: String] = [:]
-        for (key, type) in Self.settingsDefaultKeys {
+        for (key, type, isWelfare) in Self.settingsDefaultKeys {
+            // 福利数据仅在设置了备份口令（加密）时写入
+            if isWelfare && !includeWelfare { continue }
             switch type {
             case .string:
                 if let value = defaults.string(forKey: key) {
@@ -302,8 +309,9 @@ final class BackupManager {
         let username = DatabaseManager.shared.getSetting(key: "username") ?? account
 
         var payload = BackupPayload(account: account, categories: [:])
+        let hasPassword = password != nil && !password!.isEmpty
         for category in categories {
-            if let data = try collectCategory(category) {
+            if let data = try collectCategory(category, includeWelfare: hasPassword) {
                 payload.categories[category.rawValue] = data
             }
         }
@@ -410,7 +418,7 @@ final class BackupManager {
                 }
             }
 
-            let count = try restoreCategory(category, data: raw, strategy: strategy)
+            let count = try restoreCategory(category, data: raw, strategy: strategy, wasEncrypted: envelope.encrypted)
             result.restored.append(category)
             result.totalCounts[category] = count
         }
@@ -418,7 +426,7 @@ final class BackupManager {
         return result
     }
 
-    private func restoreCategory(_ category: BackupCategory, data: Data, strategy: ConflictStrategy) throws -> Int {
+    private func restoreCategory(_ category: BackupCategory, data: Data, strategy: ConflictStrategy, wasEncrypted: Bool) throws -> Int {
         let db = DatabaseManager.shared
         let decoder = JSONDecoder()
 
@@ -492,7 +500,7 @@ final class BackupManager {
 
         case .personalSettings:
             let snapshot = try decoder.decode(PersonalSettingsSnapshot.self, from: data)
-            restorePersonalSettings(snapshot, strategy: strategy)
+            restorePersonalSettings(snapshot, strategy: strategy, wasEncrypted: wasEncrypted)
             return 1
 
         case .searchHistory:
@@ -521,7 +529,7 @@ final class BackupManager {
         }
     }
 
-    private func restorePersonalSettings(_ snapshot: PersonalSettingsSnapshot, strategy: ConflictStrategy) {
+    private func restorePersonalSettings(_ snapshot: PersonalSettingsSnapshot, strategy: ConflictStrategy, wasEncrypted: Bool) {
         let db = DatabaseManager.shared
         if strategy == .overwrite {
             db.deleteSettings(keys: ["username", "avatar_image"])
@@ -535,6 +543,8 @@ final class BackupManager {
         let defaults = UserDefaults.standard
         for (key, value) in snapshot.defaults {
             guard let entry = Self.settingsDefaultKeys.first(where: { $0.key == key }) else { continue }
+            // 福利数据仅在加密备份中还原（口令保护）；明文备份即使包含也跳过
+            if entry.isWelfare && !wasEncrypted { continue }
             switch entry.type {
             case .string:
                 defaults.set(value, forKey: key)

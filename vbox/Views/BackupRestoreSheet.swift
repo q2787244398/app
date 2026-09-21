@@ -115,7 +115,7 @@ struct BackupRestoreSheet: View {
             infoCard(
                 icon: "externaldrive.fill",
                 title: "导出为单一 JSON 文件",
-                subtitle: "选择要备份的类目，可设置自定义口令加密，文件保存在本地，可拷贝到其他设备还原"
+                subtitle: "选择要备份的类目；福利数据已纳入备份，需设置口令保护。文件保存在本地，可拷贝到其他设备还原"
             )
 
             categoryList
