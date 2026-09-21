@@ -204,6 +204,17 @@ struct ProfileView: View {
 
     // MARK: - 头部登录区
 
+    /// 读取当前软件图标（Info.plist CFBundleIcons 优先，兜底 AppIcon 资源）
+    private var appIconImage: UIImage? {
+        if let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String],
+           let name = files.last {
+            if let img = UIImage(named: name) { return img }
+        }
+        return UIImage(named: "AppIcon")
+    }
+
     private var loginSection: some View {
         VStack(spacing: 12) {
             // 头像
@@ -227,9 +238,18 @@ struct ProfileView: View {
                                 .foregroundColor(.gray)
                         }
                     } else {
-                        Image(systemName: "person.circle")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray.opacity(0.4))
+                        // 未登录：默认头像使用软件图标（读取失败时回退原 person.circle）
+                        if let appIcon = appIconImage {
+                            Image(uiImage: appIcon)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle")
+                                .font(.system(size: 60))
+                                .foregroundColor(.gray.opacity(0.4))
+                        }
                     }
                 }
             }
