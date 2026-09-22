@@ -44,6 +44,9 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
     var duration: Int? = nil            // 时长（秒，插件返回 interval 格式化后解析）
     var albumName: String? = nil        // 专辑名
     var availQualities: [String] = []   // 可选音质档位（读插件 qualitys 声明）
+    // P1-A7：lx 歌曲归属平台 + 原始 musicInfo（音质切换需重新走 musicUrl 时透传给插件）
+    var musicPlatform: String? = nil
+    var lxMusicInfo: String? = nil
 
     init(from song: VodItem, sourceName: String, engineKey: String, playURL: String) {
         self.id = song.vodId
@@ -57,6 +60,9 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
         self.duration = song.metaDuration
         self.albumName = song.albumName
         if !song.availQualities.isEmpty { self.availQualities = song.availQualities }
+        // P1-A7：保留平台 + 原始 musicInfo 供音质切换复用
+        self.musicPlatform = song.musicPlatform
+        self.lxMusicInfo = song.lxMusicInfo
     }
 
     /// 直接构造（用于榜单/歌单：spider 把多首歌曲拼进一个 playUrl，这里按解析结果逐首构造）
@@ -86,12 +92,14 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
         self.duration = base.duration
         self.albumName = base.albumName
         self.availQualities = base.availQualities
+        self.musicPlatform = base.musicPlatform
+        self.lxMusicInfo = base.lxMusicInfo
     }
 
     // ---- P1-A0：显式 Codable，新增字段全部 decodeIfPresent，缺失时回退默认值，旧存档可安全解码 ----
     private enum CodingKeys: String, CodingKey {
         case id, name, artist, coverURL, playURL, sourceName, engineKey
-        case quality, qualityIndex, lyric, duration, albumName, availQualities
+        case quality, qualityIndex, lyric, duration, albumName, availQualities, musicPlatform, lxMusicInfo
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +117,8 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
         duration = try c.decodeIfPresent(Int.self, forKey: .duration)
         albumName = try c.decodeIfPresent(String.self, forKey: .albumName)
         availQualities = try c.decodeIfPresent([String].self, forKey: .availQualities) ?? []
+        musicPlatform = try c.decodeIfPresent(String.self, forKey: .musicPlatform)
+        lxMusicInfo = try c.decodeIfPresent(String.self, forKey: .lxMusicInfo)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -126,6 +136,8 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
         try c.encodeIfPresent(duration, forKey: .duration)
         try c.encodeIfPresent(albumName, forKey: .albumName)
         try c.encode(availQualities, forKey: .availQualities)
+        try c.encodeIfPresent(musicPlatform, forKey: .musicPlatform)
+        try c.encodeIfPresent(lxMusicInfo, forKey: .lxMusicInfo)
     }
 }
 
@@ -352,7 +364,17 @@ final class AudioPlayerManager: NSObject, ObservableObject {
         Task {
             let engine = LXBridgeEngine(siteKey: item.engineKey)
             do {
-                let url = try await engine.resolvePlayURL(id: item.id, quality: q)
+                // P1-A7：音质切换复用已保留的平台 + 原始 musicInfo，避免聚合源用 `id` 全平台竞速失败。
+                var rawInfo: [String: Any]? = nil
+                if let str = item.lxMusicInfo, let d = str.data(using: .utf8) {
+                    rawInfo = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+                }
+                let prefer: [String]? = item.musicPlatform.flatMap { [$0] }
+                let singer = rawInfo?["singer"] as? String
+                let url = try await engine.resolvePlayURL(id: item.id, quality: q,
+                                                          preferSources: prefer, musicInfo: rawInfo,
+                                                          name: item.name, singer: singer,
+                                                          albumName: item.albumName)
                 guard !url.isEmpty, queue.indices.contains(currentIndex) else {
                     completion?(false); return
                 }

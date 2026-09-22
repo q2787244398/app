@@ -142,8 +142,13 @@ function createLXSandbox(onInit) {
             info.quality = q;
             info.type = q;
             info.source = data.source;   // 平台（wy/kw…）
-            // 刀源需要 musicInfo；Swift 未传完整对象时用 id/name/singer 兜底补
-            if (!info.musicInfo || typeof info.musicInfo !== "object") {
+            // P1-A7：优先采用 Swift 原样回传的搜索原始 musicInfo（含 hash/songmid/name/singer/…，念心等靠它解析），
+            // 否则用 id/name/singer 兜底组装（刀源可用 name+singer 搜索匹配）。
+            const rawMusicInfo = data.musicInfo || base.musicInfo || null;
+            if (rawMusicInfo && typeof rawMusicInfo === "object") {
+                info.musicInfo = Object.assign({}, rawMusicInfo);
+                if (!info.musicInfo.id) info.musicInfo.id = id;
+            } else {
                 info.musicInfo = {
                     id,
                     name: data.name || base.name || "",
@@ -151,6 +156,10 @@ function createLXSandbox(onInit) {
                     albumName: data.albumName || base.albumName || "",
                 };
             }
+            // 把 musicInfo 平台专有字段并到 info 顶层（flat 形态），兼容读 info.hash / info.songmid / info.id 的插件
+            Object.keys(info.musicInfo).forEach((k) => {
+                if (info[k] === undefined) info[k] = info.musicInfo[k];
+            });
         } else if (action === "lyric") {
             info.id = data.id || base.id || "";
             info.quality = data.quality || base.quality || "";

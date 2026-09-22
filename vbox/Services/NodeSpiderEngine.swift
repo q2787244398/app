@@ -446,12 +446,19 @@ final class LXBridgeEngine: SpiderEngineProtocol {
         let duration = parseInterval(song, key: "interval")
         let album = (song["albumName"] as? String) ?? (song["album"] as? String)
         let qs = (song["qualitys"] as? [String]) ?? (song["quality"] as? [String]) ?? []
+        // P1-A7：原样保留搜索返回的 song 字典（含平台专有字段 hash/songmid/…），
+        // 播放时作为 musicInfo 透传给插件，避免平台专有字段丢失导致 musicUrl 解析失败。
+        var lxRaw: String? = nil
+        if let d = try? JSONSerialization.data(withJSONObject: song) {
+            lxRaw = String(data: d, encoding: .utf8)
+        }
         return VodItem(vodId: id, vodName: name, vodPic: pic,
                        vodRemarks: remarks, vodYear: nil, vodArea: nil,
                        vodDirector: nil, vodActor: nil, vodContent: nil,
                        vodPlayFrom: pluginKey, vodPlayUrl: nil, customHeaders: nil,
                        engineKey: pluginKey,
-                       metaDuration: duration, albumName: album, availQualities: qs)
+                       metaDuration: duration, albumName: album, availQualities: qs,
+                       musicPlatform: source, lxMusicInfo: lxRaw)
     }
 
     /// 解析 lx interval 时长（"MM:SS"/"HH:MM:SS"）为秒；无效返回 nil。
@@ -466,13 +473,33 @@ final class LXBridgeEngine: SpiderEngineProtocol {
 
     // MARK: - 直链解析（B1 多平台并发竞速回退）
 
-    /// 对插件支持的所有平台并发请求 musicUrl，取首个成功返回非空直链。
-    /// 念心仅 musicUrl 类型，天然契合此路径。
-    func resolvePlayURL(id: String, quality: String?, preferSources: [String]? = nil) async throws -> String {
+    /// 对插件支持的平台请求 musicUrl 取直链。
+    /// P1-A7 关键修复：聚合源搜索返回的歌曲**已归属某个平台**（musicPlatform），其 id/hash/songmid
+    /// 是平台专有的，必须携带原始 musicInfo 且**只对该平台**解析，否则同名 id 在别的平台全部失败。
+    /// - Parameters:
+    ///   - preferSources: 限定的候选平台；传 nil 表示在全部支持平台间竞速（旧行为，不推荐用于聚合源单曲）。
+    ///   - musicInfo: 搜索时保留的原始 song 字典（含 hash/songmid/name/singer/albumName），透传给插件。
+    func resolvePlayURL(id: String, quality: String?, preferSources: [String]? = nil,
+                        musicInfo: [String: Any]? = nil, name: String? = nil,
+                        singer: String? = nil, albumName: String? = nil) async throws -> String {
         guard NodeRuntimeManager.shared.isLXReady else { throw LXBridgeError.lxNotReady }
-        let sources = preferSources ?? supportedSources
+        let sources = (preferSources?.isEmpty == false) ? preferSources! : supportedSources
         guard !sources.isEmpty else { throw LXBridgeError.bridge("该源无可播放平台") }
         let q = quality ?? "320k"
+
+        // 优先使用原始 musicInfo；否则用散列字段组装一份（保底让插件拿到 name/singer）。
+        var info: [String: Any]? = nil
+        if let mi = musicInfo, !mi.isEmpty {
+            info = ["musicInfo": mi, "name": mi["name"] ?? name ?? "",
+                    "singer": mi["singer"] ?? singer ?? "",
+                    "albumName": mi["albumName"] ?? albumName ?? ""]
+        } else {
+            var mi: [String: Any] = ["id": id]
+            if let n = name, !n.isEmpty { mi["name"] = n }
+            if let s = singer, !s.isEmpty { mi["singer"] = s }
+            if let a = albumName, !a.isEmpty { mi["albumName"] = a }
+            info = ["musicInfo": mi, "name": name ?? "", "singer": singer ?? "", "albumName": albumName ?? ""]
+        }
 
         // B1：同 Source 并发出 4 路，整体 8s 上限，单请求 6s 超时
         let overallDeadline = Date().addingTimeInterval(8)
@@ -484,9 +511,10 @@ final class LXBridgeEngine: SpiderEngineProtocol {
                 guard swiftConformant else { return [] }
                 for src in remaining {
                     let s = src
+                    let mi = info
                     group.addTask {
                         do {
-                            let r = try await self.tryResolve(s: s, id: id, q: q)
+                            let r = try await self.tryResolve(s: s, id: id, q: q, info: mi)
                             return (s, true, r)
                         } catch {
                             return (s, false, nil)
@@ -506,8 +534,12 @@ final class LXBridgeEngine: SpiderEngineProtocol {
         throw LXBridgeError.bridge("所有平台均解析失败")
     }
 
-    private func tryResolve(s: String, id: String, q: String) async throws -> String {
-        let (obj, result) = try await bridgeCall("musicUrl", ["source": s, "id": id, "quality": q])
+    private func tryResolve(s: String, id: String, q: String, info: [String: Any]?) async throws -> String {
+        var body: [String: Any] = ["source": s, "id": id, "quality": q]
+        if let info = info {
+            for (k, v) in info { body[k] = v }
+        }
+        let (obj, result) = try await bridgeCall("musicUrl", body)
         try ensureOk(obj)
         if let str = result as? String, !str.isEmpty { return str }
         if let dict = result as? [String: Any] {

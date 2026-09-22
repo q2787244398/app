@@ -206,12 +206,19 @@ struct VodItem: Codable, Identifiable {
     var metaDuration: Int?        // 时长（秒，由 lx interval 格式化串解析）
     var albumName: String?        // 专辑名
     var availQualities: [String]  // 可选音质档位（读插件 qualitys 声明）
+    /// P1-A7：lx 歌曲所属平台 key（wy/tx/kw/kg/mg/qs）。搜索时记录该首歌来自哪个平台，
+    /// 播放时据此只对该平台发起 musicUrl（聚合源竞速必须定位到正确平台，否则同名 id 全部失败）。
+    var musicPlatform: String?
+    /// P1-A7：lx 搜索返回的原始 song 字典 JSON（含 hash/songmid/name/singer/albumName 等字段）。
+    /// 许多插件（念心）直接读 musicInfo 里的平台专有字段（hash/songmid），必须原样带回播放。
+    var lxMusicInfo: String?
 
     init(vodId: String, vodName: String, vodPic: String, vodRemarks: String? = nil,
          vodYear: String? = nil, vodArea: String? = nil, vodDirector: String? = nil,
          vodActor: String? = nil, vodContent: String? = nil, vodPlayFrom: String? = nil,
          vodPlayUrl: String? = nil, customHeaders: [String: String]? = nil, engineKey: String? = nil,
-         metaDuration: Int? = nil, albumName: String? = nil, availQualities: [String] = []) {
+         metaDuration: Int? = nil, albumName: String? = nil, availQualities: [String] = [],
+         musicPlatform: String? = nil, lxMusicInfo: String? = nil) {
         self.vodId = vodId
         self.vodName = vodName
         self.vodPic = vodPic
@@ -228,6 +235,8 @@ struct VodItem: Codable, Identifiable {
         self.metaDuration = metaDuration
         self.albumName = albumName
         self.availQualities = availQualities
+        self.musicPlatform = musicPlatform
+        self.lxMusicInfo = lxMusicInfo
     }
 
     enum CodingKeys: String, CodingKey {
@@ -244,7 +253,7 @@ struct VodItem: Codable, Identifiable {
         case vodPlayUrl = "vod_play_url"
         case customHeaders
         case engineKey
-        case metaDuration, albumName, availQualities
+        case metaDuration, albumName, availQualities, musicPlatform, lxMusicInfo
     }
 
     /// 显式解码：新增元数据字段全部 decodeIfPresent/默认回退，
@@ -267,6 +276,8 @@ struct VodItem: Codable, Identifiable {
         metaDuration = try c.decodeIfPresent(Int.self, forKey: .metaDuration)
         albumName = try c.decodeIfPresent(String.self, forKey: .albumName)
         availQualities = try c.decodeIfPresent([String].self, forKey: .availQualities) ?? []
+        musicPlatform = try c.decodeIfPresent(String.self, forKey: .musicPlatform)
+        lxMusicInfo = try c.decodeIfPresent(String.self, forKey: .lxMusicInfo)
     }
 }
 

@@ -5563,7 +5563,7 @@ globalThis.__JS_SPIDER__ = _spider;
     }
 
     /// 获取单个音乐源的播放地址
-    func fetchMusicPlayUrl(source: SourceDisplayItem, vodId: String) async -> (playUrl: String?, playFrom: String?) {
+    func fetchMusicPlayUrl(source: SourceDisplayItem, song: VodItem) async -> (playUrl: String?, playFrom: String?) {
         guard source.category == .music,
               let key = source.engineKey,
               let engine = engines[key] else { return (nil, nil) }
@@ -5571,20 +5571,33 @@ globalThis.__JS_SPIDER__ = _spider;
         await waitForNodeReadyIfNeeded()
 
         // P1-A5：lx 源走并发直链解析（多平台竞速回退），playFrom = 插件 key。
+        // P1-A7 修复：歌曲已归属某平台，须携带原始 musicInfo 并只对该平台解析，
+        // 避免聚合源把同 id 拿到全平台竞速、以及丢 hash/songmid/name/singer 导致全部失败。
         // 不影响其他音乐源的公共 detail 路径。
         if let lx = engine as? LXBridgeEngine {
             guard NodeRuntimeManager.shared.isLXReady else { return (nil, nil) }
             do {
-                let url = try await lx.resolvePlayURL(id: vodId, quality: nil)
+                let rawInfo: [String: Any]? = song.lxMusicInfo.flatMap { str in
+                    guard let d = str.data(using: .utf8),
+                          let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+                    return obj
+                }
+                let platform = song.musicPlatform
+                let prefer: [String]? = platform.flatMap { [$0] }
+                let rawSinger = rawInfo?["singer"] as? String
+                let url = try await lx.resolvePlayURL(id: song.vodId, quality: nil,
+                                                      preferSources: prefer, musicInfo: rawInfo,
+                                                      name: song.vodName, singer: rawSinger,
+                                                      albumName: song.albumName)
                 return (url, lx.pluginKey)
             } catch {
-                print("[SpiderManager] musicUrl[\(source.name)] 失败: \(error)")
+                print("[SpiderManager] musicUrl[\(source.name)/\(platform ?? "?")] 失败: \(error)")
                 return (nil, nil)
             }
         }
 
         do {
-            let result = try engine.callDetailContent(ids: vodId)
+            let result = try engine.callDetailContent(ids: song.vodId)
             if let item = result.list?.first {
                 return (item.vodPlayUrl, item.vodPlayFrom)
             }

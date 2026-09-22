@@ -334,7 +334,7 @@ struct MusicView: View {
             var items: [MusicQueueItem] = []
             for song in viewModel.songs {
                 let (playUrl, _) = await SpiderManager.shared.fetchMusicPlayUrl(
-                    source: source, vodId: song.vodId
+                    source: source, song: song
                 )
                 if let url = playUrl, !url.isEmpty {
                     items.append(MusicQueueItem(
@@ -720,7 +720,7 @@ final class MusicViewModel: ObservableObject {
     func playSong(song: VodItem, source: SourceDisplayItem) async {
         let (playUrl, playFrom) = await SpiderManager.shared.fetchMusicPlayUrl(
             source: source,
-            vodId: song.vodId
+            song: song
         )
 
         // 能直接取到播放地址。榜单/歌单源（如酷听/网易云等）的 spider 会把歌单内
@@ -772,7 +772,7 @@ final class MusicViewModel: ObservableObject {
         var queue: [MusicQueueItem] = []
         for sub in subSongs {
             let (subUrl, subFrom) = await SpiderManager.shared.fetchMusicPlayUrl(
-                source: source, vodId: sub.vodId
+                source: source, song: sub
             )
             if let u = subUrl, !u.isEmpty, let first = parsePlayUrl(u, playFrom: subFrom).first {
                 queue.append(MusicQueueItem(
