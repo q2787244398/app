@@ -105,6 +105,7 @@
 		53873C0B408C557A4B2E8906 /* Libavdevice.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 39F2CEFFD0ECBE055433E9B6 /* Libavdevice.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		53A4EEAAFB85002511F0912D /* Libuchardet.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 06A354B9169FFA77009AD1AF /* Libuchardet.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		55171A740A34DA0B7EE845C9 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 816E7017934D4097DAF688BE /* GoProxyManager.swift */; };
+		5647A3E8126F1310BCDF82AB /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019A59CE8A0338CBBCF7098F /* GoProxyManager.swift */; };
 		56ADE960FFA272868CAB8A42 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20780539C31543D879B03E0D /* GoProxyManager.swift */; };
 		59AE8592B794C969A0ADE429 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4635845CF392B95A0C1757B /* GoProxyManager.swift */; };
 		5A677A1CD1026FDD1C4458C1 /* GoProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0A7435BE5DA7CBA3E9CF9E3 /* GoProxyManager.swift */; };
@@ -230,7 +231,6 @@
 		A10132 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10132 /* BackupManager.swift */; };
 		A10133 /* MusicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10133 /* MusicView.swift */; };
 		A10134 /* AudioPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10134 /* AudioPlayerManager.swift */; };
-		A10205 /* MusicPlaylistService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10205 /* MusicPlaylistService.swift */; };
 		A10135 /* MusicPlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* MusicPlayerViews.swift */; };
 		A10136 /* CloudDriveAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10136 /* CloudDriveAuthManager.swift */; };
 		A10137 /* SpiderEngineProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10137 /* SpiderEngineProtocol.swift */; };
@@ -476,6 +476,7 @@
 /* Begin PBXFileReference section */
 		00AC92B4E710C182A5880903 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		01882BD0F65A4C05B6176223 /* ExtscreenAPIClient.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ExtscreenAPIClient.swift; sourceTree = "<group>"; };
+		019A59CE8A0338CBBCF7098F /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		024DA0335408EA5B886523D6 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		028CD8206D8EACEF3D2B2F4D /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
 		037E7C7A37FCB02ED4AF34A9 /* GoProxyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoProxyManager.swift; sourceTree = "<group>"; };
@@ -1266,6 +1267,15 @@
 			path = Bridge;
 			sourceTree = "<group>";
 		};
+		44C14CFB3C7654C6DD36D530 /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				019A59CE8A0338CBBCF7098F /* GoProxyManager.swift */,
+			);
+			name = Bridge;
+			path = Bridge;
+			sourceTree = "<group>";
+		};
 		467C35F690BC27D4F33B6CFC /* Bridge */ = {
 			isa = PBXGroup;
 			children = (
@@ -1531,6 +1541,7 @@
 				372FB893040423089E357707 /* Bridge */,
 				02621493020B24418E288AA0 /* Bridge */,
 				411D1029D86EBEBF03A93F17 /* Bridge */,
+				44C14CFB3C7654C6DD36D530 /* Bridge */,
 			);
 			name = vbox;
 			sourceTree = "<group>";
@@ -2978,6 +2989,7 @@
 				7E5222F1E3D7C27FC926D4F2 /* GoProxyManager.swift in Sources */,
 				E09CCEFDEE524582DAB50774 /* GoProxyManager.swift in Sources */,
 				B250081C06E38B7100F6C390 /* GoProxyManager.swift in Sources */,
+				5647A3E8126F1310BCDF82AB /* GoProxyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
