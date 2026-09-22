@@ -1342,8 +1342,9 @@ globalThis.__JS_SPIDER__ = _spider;
             } else {
                 // baseURL 缺失/无效（通常是远程源地址留空）：
                 // 返回相对路径本身，交由 loadSingleRemoteSpider 优先读本地缓存（cache-first）。
-                // 仅 .js 走缓存；.py 没有缓存加载路径，保持跳过以免发起无效网络请求。
-                if api.hasSuffix(".js") {
+                // JS 与 Python 均支持 cache-first；.py 改为同样返回 cleanPath，使 baseURL 无效时
+                // py 站点也能从本地缓存恢复（旧实现仅 .js 走缓存，.py 直接跳过导致 py 源不显示）。
+                if api.hasSuffix(".js") || api.hasSuffix(".py") {
                     return cleanPath
                 }
                 print("[SpiderManager] ⚠️ 远程蜘蛛 baseURL 无效，跳过: \(site.name)")
@@ -1426,24 +1427,33 @@ globalThis.__JS_SPIDER__ = _spider;
         AppLogStore.shared.info(.spider, "[SpiderManager] 🐍 开始加载 Python 蜘蛛: \(site.name) (key=\(key))")
         AppLogStore.shared.info(.spider, "[SpiderManager] 🐍 脚本 URL: \(resolvedURL)")
         do {
-            // 1. 下载 .py 脚本
-            guard let url = URL(string: resolvedURL) else {
-                AppLogStore.shared.info(.spider, "[SpiderManager] ❌ Python 蜘蛛 URL 无效: \(resolvedURL)")
-                return false
+            // ★ cache-first：优先读本地缓存（远程同步会把 .py 缓存为 \(key) 文件，备份还原也会写回）。
+            // 与 JS 蜘蛛 cache-first 对齐：此前仅 JS 走缓存、Python 缺失该路径，
+            // 导致还原后即使备份里有 py 数据也会走网络下载；离线/下载失败时 py 源不显示。
+            var pyCode: String? = RemoteSourceConfigManager.shared.cachedSpiderJSContent(forKey: key)
+            if pyCode != nil {
+                AppLogStore.shared.info(.spider, "[SpiderManager] 📁 从本地缓存加载 Python 蜘蛛: \(site.name) (key=\(key))")
+            } else {
+                // 缓存缺失 → 网络下载 .py 脚本
+                AppLogStore.shared.info(.spider, "[SpiderManager] 🌐 本地缓存不存在，从网络下载 Python 蜘蛛: \(site.name)")
+                guard let url = URL(string: resolvedURL), url.scheme != nil, url.host != nil else {
+                    AppLogStore.shared.info(.spider, "[SpiderManager] ❌ Python 蜘蛛缓存缺失且 URL 无效: \(resolvedURL)")
+                    return false
+                }
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 20
+                req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+                let (data, response) = try await URLSession.shared.data(for: req)
+                if let httpResp = response as? HTTPURLResponse {
+                    AppLogStore.shared.info(.spider, "[SpiderManager] 🐍 HTTP \(httpResp.statusCode), 收到 \(data.count) 字节")
+                }
+                pyCode = String(data: data, encoding: .utf8)
             }
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 20
-            req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await URLSession.shared.data(for: req)
-            
-            if let httpResp = response as? HTTPURLResponse {
-                AppLogStore.shared.info(.spider, "[SpiderManager] 🐍 HTTP \(httpResp.statusCode), 收到 \(data.count) 字节")
-            }
-            
-            guard let pyCode = String(data: data, encoding: .utf8),
-                  pyCode.count > 100,
-                  pyCode.contains("class Spider") || pyCode.contains("class  Spider") else {
-                AppLogStore.shared.info(.spider, "[SpiderManager] ❌ Python 蜘蛛内容无效或不含 class Spider: \(site.name) (长度=\(data.count))")
+
+            guard let code = pyCode,
+                  code.count > 100,
+                  code.contains("class Spider") || code.contains("class  Spider") else {
+                AppLogStore.shared.info(.spider, "[SpiderManager] ❌ Python 蜘蛛内容无效或不含 class Spider: \(site.name) (长度=\(pyCode?.count ?? 0))")
                 return false
             }
 
@@ -1453,7 +1463,7 @@ globalThis.__JS_SPIDER__ = _spider;
             try FileManager.default.createDirectory(at: pyDir, withIntermediateDirectories: true)
             let safeKey = key.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ":", with: "_")
             let pyURL = pyDir.appendingPathComponent("\(safeKey).py")
-            try data.write(to: pyURL, options: .atomic)
+            try Data(code.utf8).write(to: pyURL, options: .atomic)
             AppLogStore.shared.info(.spider, "[SpiderManager] 🐍 脚本已保存: \(pyURL.lastPathComponent)")
 
             // 3. 创建 PythonSpiderEngine（就在主线程/当前 actor 创建，模拟器不阻塞太多）

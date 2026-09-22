@@ -363,6 +363,21 @@ final class BackupManager {
             }
         }
 
+        // 补采 Python 蜘蛛（remote_sources/spider_python/*.py）：Python 引擎实际从该目录
+        // 读取脚本，此前备份仅采 JS 缓存目录，导致 py 脚本备份不完整、还原后 py 源不显示。
+        // 以站点 key 为键并入 spiderJS，还原时统一写回 JS 缓存目录供 cache-first 读取。
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        if let pyDirURL = docs?.appendingPathComponent("remote_sources/spider_python", isDirectory: true),
+           let pyFiles = try? fm.contentsOfDirectory(at: pyDirURL, includingPropertiesForKeys: nil) {
+            for file in pyFiles where file.pathExtension == "py" {
+                let key = file.deletingPathExtension().lastPathComponent
+                // 已以同名 key 缓存则跳过（JS 缓存优先），避免覆盖
+                if spiderJS[key] == nil, let data = try? Data(contentsOf: file) {
+                    spiderJS[key] = data
+                }
+            }
+        }
+
         // A6：收集 lx-music 桥接插件（Documents/noderuntime/plugins/lx/*.js）
         var lxPlugins: [String: Data] = [:]
         let lxPluginDir = NodeRuntimeManager.shared.lxPluginsDir

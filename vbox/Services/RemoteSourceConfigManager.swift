@@ -635,9 +635,13 @@ final class RemoteSourceConfigManager: ObservableObject {
 
         do {
             let data = try await fetchData(from: url)
+            // 兼容 JS 与 Python 蜘蛛缓存：JS 通常含 function/var/let/const，
+            // Python 站点（api 指向 ./js/xxx.py）通常含 def/import/class。
+            // 旧实现仅认 JS 关键字，导致含 py 的站点从不进缓存 → 备份缺 py、还原后 py 源不显示。
             guard let jsCode = String(data: data, encoding: .utf8),
                   jsCode.count > 50,
-                  (jsCode.contains("function ") || jsCode.contains("var ") || jsCode.contains("let ") || jsCode.contains("const ")) else {
+                  (jsCode.contains("function ") || jsCode.contains("var ") || jsCode.contains("let ") || jsCode.contains("const ")
+                   || jsCode.contains("def ") || jsCode.contains("import ") || jsCode.contains("class Spider")) else {
                 print("[RemoteSource] ⚠️ JS 文件内容无效: \(key)")
                 return false
             }
