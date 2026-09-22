@@ -293,7 +293,8 @@ final class AudioPlayerManager: NSObject, ObservableObject {
                     self.playbackNotice = "播放失败，正在切换下一首"
                     print("[AudioPlayer] 播放失败: \(item.error?.localizedDescription ?? "")")
                     // #6：lx 聚合源直链常有过期/失效，先按归属平台重解析一次当前曲目
-                    let isAggregator = LXBridgeEngine.lxKeyMap[item.engineKey] != nil
+                    let curEngineKey = self.currentSong?.engineKey ?? ""
+                    let isAggregator = LXBridgeEngine.lxKeyMap[curEngineKey] != nil
                     if isAggregator && !self.didReResolveCurrent {
                         self.reResolveCurrent()
                         return

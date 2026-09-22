@@ -230,6 +230,7 @@
 		A10132 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10132 /* BackupManager.swift */; };
 		A10133 /* MusicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10133 /* MusicView.swift */; };
 		A10134 /* AudioPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10134 /* AudioPlayerManager.swift */; };
+		A10205 /* MusicPlaylistService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10205 /* MusicPlaylistService.swift */; };
 		A10135 /* MusicPlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* MusicPlayerViews.swift */; };
 		A10136 /* CloudDriveAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10136 /* CloudDriveAuthManager.swift */; };
 		A10137 /* SpiderEngineProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10137 /* SpiderEngineProtocol.swift */; };
@@ -724,6 +725,7 @@
 		B10200 /* YBoxService2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YBoxService2.swift; sourceTree = "<group>"; };
 		B10203 /* WelfareSubViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelfareSubViews.swift; sourceTree = "<group>"; };
 		B10204 /* BaiduWebViewBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaiduWebViewBridge.swift; sourceTree = "<group>"; };
+		B10205 /* MusicPlaylistService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlaylistService.swift; sourceTree = "<group>"; };
 		B10999 /* vbox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = vbox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B11000 /* BaiduProxyClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaiduProxyClient.swift; sourceTree = "<group>"; };
 		B11001 /* DBModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DBModels.swift; sourceTree = "<group>"; };
@@ -2422,6 +2424,7 @@
 				B10132 /* BackupManager.swift */,
 				B10134 /* AudioPlayerManager.swift */,
 				B10204 /* BaiduWebViewBridge.swift */,
+				B10205 /* MusicPlaylistService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
