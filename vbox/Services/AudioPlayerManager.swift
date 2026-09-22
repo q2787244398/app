@@ -46,6 +46,17 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
         self.sourceName = sourceName
         self.engineKey = engineKey
     }
+
+    /// 直接构造（用于榜单/歌单：spider 把多首歌曲拼进一个 playUrl，这里按解析结果逐首构造）
+    init(name: String, artist: String, coverURL: String, playURL: String, sourceName: String, engineKey: String) {
+        self.id = playURL
+        self.name = name
+        self.artist = artist
+        self.coverURL = coverURL
+        self.playURL = playURL
+        self.sourceName = sourceName
+        self.engineKey = engineKey
+    }
 }
 
 // MARK: - AudioPlayerManager

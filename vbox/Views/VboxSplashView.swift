@@ -186,13 +186,17 @@ struct VboxSplashView: View {
             // 底部小字
             VStack {
                 Spacer()
-                Text("play everything")
-                    .font(.system(size: 12, weight: .regular))
-                    .tracking(4)
-                    .foregroundColor(subtitleColor)
-                    .padding(.bottom, 80)
-                    .opacity(showGlow ? 1 : 0)
-                    .animation(.easeIn(duration: 0.4).delay(0.5), value: showGlow)
+                VStack(spacing: 6) {
+                    Text("愿你每一次观影都能释放现有压力")
+                    Text("vbox聚合观影软件由Ai开发而来")
+                }
+                .font(.system(size: 12, weight: .regular))
+                .tracking(2)
+                .foregroundColor(subtitleColor)
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 80)
+                .opacity(showGlow ? 1 : 0)
+                .animation(.easeIn(duration: 0.4).delay(0.5), value: showGlow)
             }
         }
         .onAppear {

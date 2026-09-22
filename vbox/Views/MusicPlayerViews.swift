@@ -38,6 +38,9 @@ struct MiniPlayerBar: View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
+            // Group 包裹迷你条与全屏呈现：让 .fullScreenCover(正在播放页) 不随
+            // currentSong 的存亡而被移除, 保证任何播放状态下全屏页都能呈现/退出。
+            Group {
             if let song = player.currentSong {
                 let barHeight = (isCollapsed ? collapsedHeight : expandedHeight)
                 let baseBottom = max(h - barHeight - bottomMargin, 0)
@@ -184,11 +187,13 @@ struct MiniPlayerBar: View {
                 .animation(.easeInOut(duration: 0.2), value: positionY)
                 .animation(.easeInOut(duration: 0.25), value: isCollapsed)
                 .animation(.easeInOut(duration: 0.15), value: reveal)
-                .fullScreenCover(isPresented: $player.showFullPlayer) {
-                    MusicPlayerFullView()
-                }
                 .onAppear { player.saveQueue() }
                 .onDisappear { player.saveQueue() }
+            }
+            }
+            // 全屏"正在播放"页挂载到 Group 层：不依赖 currentSong 是否存在
+            .fullScreenCover(isPresented: $player.showFullPlayer) {
+                MusicPlayerFullView()
             }
         }
     }
@@ -283,10 +288,8 @@ struct MusicPlayerFullView: View {
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 34, height: 34)
-                            .background(Circle().fill(Color.black.opacity(0.35)))
                     }
                     Spacer()
                     Text("正在播放")
@@ -391,8 +394,8 @@ struct MusicPlayerFullView: View {
                     .disabled(player.queue.count <= 1)
 
                     Button(action: { player.togglePlayPause() }) {
-                        Image(systemName: player.isLoading ? "hourglass" : (player.isPlaying ? "pause.circle.fill" : "play.circle.fill"))
-                            .font(.system(size: 60))
+                        Image(systemName: player.isLoading ? "hourglass" : (player.isPlaying ? "pause.fill" : "play.fill"))
+                            .font(.system(size: 40))
                             .foregroundColor(.white)
                     }
 

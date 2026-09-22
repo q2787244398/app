@@ -519,21 +519,68 @@ final class MusicViewModel: ObservableObject {
             vodId: song.vodId
         )
 
-        guard let url = playUrl, !url.isEmpty else {
-            print("[MusicView] 无法获取播放地址: \(song.vodName)")
+        // 能直接取到播放地址。榜单/歌单源（如酷听/网易云等）的 spider 会把歌单内
+        // 所有歌曲以 "歌曲1$url1#歌曲2$url2…" 拼进一个 vod_play_url，这里解析后
+        // 若不止一首则整批入队，使正在播放页的播放列表显示该歌单的全部歌曲。
+        if let url = playUrl, !url.isEmpty {
+            let playItems = parsePlayUrl(url, playFrom: playFrom)
+            if playItems.count > 1 {
+                // 多首 → 按歌单一次性入队，播放第一条
+                let queue = playItems.map { item in
+                    MusicQueueItem(
+                        name: item.name,
+                        artist: song.vodName,   // 歌单名作为归类显示
+                        coverURL: song.vodPic,
+                        playURL: item.url,
+                        sourceName: source.name,
+                        engineKey: source.engineKey ?? ""
+                    )
+                }
+                print("[MusicView] '\(song.vodName)' 展开为歌单, 共 \(queue.count) 首")
+                AudioPlayerManager.shared.playQueue(queue)
+            } else if let firstItem = playItems.first {
+                // 单首 → 普通歌曲
+                let queueItem = MusicQueueItem(
+                    from: song,
+                    sourceName: source.name,
+                    engineKey: source.engineKey ?? "",
+                    playURL: firstItem.url
+                )
+                AudioPlayerManager.shared.play(item: queueItem)
+            }
             return
         }
 
-        // 播放地址可能包含多线路，格式: 线路1$url1#线路2$url2
-        let playItems = parsePlayUrl(url, playFrom: playFrom)
-        if let firstItem = playItems.first {
-            let queueItem = MusicQueueItem(
-                from: song,
-                sourceName: source.name,
-                engineKey: source.engineKey ?? "",
-                playURL: firstItem.url
+        // 取不到直接播放地址 → 该节点很可能是"歌单/榜单"等聚合条目。
+        // 用其 vodId 作为分类 id，拉取其下的歌曲列表后整批入队播放，
+        // 这样正在播放页的播放队列会显示该歌单/榜单下的所有歌曲。
+        print("[MusicView] 无直接播放地址, 将 '\(song.vodName)' 作为歌单/榜单展开: tid=\(song.vodId)")
+        let subSongs = await SpiderManager.shared.fetchSingleSourceCategoryContent(
+            source: source,
+            categoryTypeId: song.vodId,
+            page: 1
+        )
+        guard !subSongs.isEmpty else {
+            print("[MusicView] 展开失败(未返回子歌曲): \(song.vodName)")
+            return
+        }
+
+        var queue: [MusicQueueItem] = []
+        for sub in subSongs {
+            let (subUrl, subFrom) = await SpiderManager.shared.fetchMusicPlayUrl(
+                source: source, vodId: sub.vodId
             )
-            AudioPlayerManager.shared.play(item: queueItem)
+            if let u = subUrl, !u.isEmpty, let first = parsePlayUrl(u, playFrom: subFrom).first {
+                queue.append(MusicQueueItem(
+                    from: sub,
+                    sourceName: source.name,
+                    engineKey: source.engineKey ?? "",
+                    playURL: first.url
+                ))
+            }
+        }
+        if !queue.isEmpty {
+            AudioPlayerManager.shared.playQueue(queue)
         }
     }
 
