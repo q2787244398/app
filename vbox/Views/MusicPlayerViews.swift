@@ -465,6 +465,16 @@ struct MusicPlayerFullView: View {
             loadLyricForCurrent()
         }
         .onAppear { loadLyricForCurrent() }
+        // P1-A10：下拉手势关闭全屏播放页
+        .gesture(
+            DragGesture(minimumDistance: 30, coordinateSpace: .global)
+                .onEnded { value in
+                    let dy = value.translation.height
+                    // 向下滑动超过 80pt 且垂直为主 → 关闭
+                    guard dy > 80, abs(dy) > abs(value.translation.width) else { return }
+                    dismiss()
+                }
+        )
     }
 
     // MARK: - P3-C2 歌词加载
