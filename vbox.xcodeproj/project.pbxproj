@@ -231,6 +231,7 @@
 		A10132 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10132 /* BackupManager.swift */; };
 		A10133 /* MusicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10133 /* MusicView.swift */; };
 		A10134 /* AudioPlayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10134 /* AudioPlayerManager.swift */; };
+		A10205 /* MusicPlaylistService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10205 /* MusicPlaylistService.swift */; };
 		A10135 /* MusicPlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10135 /* MusicPlayerViews.swift */; };
 		A10136 /* CloudDriveAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10136 /* CloudDriveAuthManager.swift */; };
 		A10137 /* SpiderEngineProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10137 /* SpiderEngineProtocol.swift */; };
@@ -2948,6 +2949,7 @@
 				519A1DE7CBA423057E6CE53E /* GoProxyManager.swift in Sources */,
 				2E4FD18EDA17085DC996EA55 /* GoProxyManager.swift in Sources */,
 				A10134 /* AudioPlayerManager.swift in Sources */,
+				A10205 /* MusicPlaylistService.swift in Sources */,
 				A10135 /* MusicPlayerViews.swift in Sources */,
 				EB93E65B715CC1EC79FB1263 /* GoProxyManager.swift in Sources */,
 				F673B656D5F91087C52FA765 /* GoProxyManager.swift in Sources */,
