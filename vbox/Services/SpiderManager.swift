@@ -5576,13 +5576,14 @@ globalThis.__JS_SPIDER__ = _spider;
         // 不影响其他音乐源的公共 detail 路径。
         if let lx = engine as? LXBridgeEngine {
             guard NodeRuntimeManager.shared.isLXReady else { return (nil, nil) }
+            // 歌曲已归属某平台，需在 catch 中也可见（用于错误日志）
+            let platform = song.musicPlatform
             do {
                 let rawInfo: [String: Any]? = song.lxMusicInfo.flatMap { str in
                     guard let d = str.data(using: .utf8),
                           let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
                     return obj
                 }
-                let platform = song.musicPlatform
                 let prefer: [String]? = platform.flatMap { [$0] }
                 let rawSinger = rawInfo?["singer"] as? String
                 let url = try await lx.resolvePlayURL(id: song.vodId, quality: nil,
