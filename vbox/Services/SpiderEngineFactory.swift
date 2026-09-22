@@ -24,6 +24,9 @@ final class SpiderEngineFactory {
         case .node:
             // 形态 A''：Node 引擎不加载本地 JS，直接桥接 127.0.0.1 Node 进程
             engine = NodeSpiderEngine(siteKey: key)
+        case .nodeLX:
+            // lx-music 桥接引擎：桥接同一 Node 进程内的 lx-bridge.js（不走本地 JS）
+            engine = LXBridgeEngine(siteKey: key)
         }
 
         // 先在后台设置一个基础日志回调（只打印，不碰 UI）
@@ -31,8 +34,8 @@ final class SpiderEngineFactory {
             print("[SpiderEngine|\(key)|\(engineType.displayName)] \(msg)")
         }
 
-        // Node 引擎无需注入蜘蛛库 / 执行脚本，直接返回
-        guard engineType != .node else {
+        // Node / NodeLX 引擎无需注入蜘蛛库 / 执行脚本，直接返回
+        guard engineType != .node && engineType != .nodeLX else {
             return engine
         }
 

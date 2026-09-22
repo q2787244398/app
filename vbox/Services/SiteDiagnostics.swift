@@ -242,8 +242,8 @@ class SiteDiagnosticsManager: ObservableObject {
                 engine = JSSpiderEngine()
             case .quickJS:
                 engine = QJSSpiderEngine()
-            case .node:
-                // Node 引擎不做本地 JS 兼容性测试
+            case .node, .nodeLX:
+                // Node / NodeLX 引擎不做本地 JS 兼容性测试
                 return (success: true, error: nil)
             }
 

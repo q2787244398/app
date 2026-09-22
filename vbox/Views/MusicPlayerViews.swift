@@ -447,15 +447,14 @@ struct MusicPlayerFullView: View {
     // MARK: - P3-C2 歌词加载
     private func loadLyricForCurrent() {
         guard let song = player.currentSong,
-              let key = song.engineKey,
-              LXBridgeEngine.lxKeyMap[key] != nil,
+              LXBridgeEngine.lxKeyMap[song.engineKey] != nil,
               NodeRuntimeManager.shared.isLXReady else {
             lyricLines = []
             isLyricLoading = false
             return
         }
         isLyricLoading = true
-        let engine = LXBridgeEngine(siteKey: key)
+        let engine = LXBridgeEngine(siteKey: song.engineKey)
         Task { @MainActor in
             let raw = await engine.fetchLyricForSong(id: song.id)
             lyricLines = Self.parseLRC(raw)
@@ -493,7 +492,7 @@ struct MusicPlayerFullView: View {
 
     /// P3-C2：按当前播放时间返回激活歌词行下标
     private var activeLyricIndex: Int {
-        guard let song = player.currentSong, let k = song.engineKey, LXBridgeEngine.lxKeyMap[k] != nil else { return -1 }
+        guard let song = player.currentSong, LXBridgeEngine.lxKeyMap[song.engineKey] != nil else { return -1 }
         let t = player.currentTime
         guard let i = lyricLines.lastIndex(where: { $0.0 <= t }) else {
             return lyricLines.isEmpty ? -1 : 0
@@ -507,7 +506,7 @@ struct MusicPlayerFullView: View {
 extension MusicPlayerFullView {
     @ViewBuilder private var qualitySwitchBar: some View {
         if let song = player.currentSong,
-           let key = song.engineKey, LXBridgeEngine.lxKeyMap[key] != nil,
+           LXBridgeEngine.lxKeyMap[song.engineKey] != nil,
            song.availQualities.count > 1 {
             let qualities = uniquePreservingOrder(song.availQualities)
             HStack(spacing: 10) {

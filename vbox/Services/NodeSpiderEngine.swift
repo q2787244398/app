@@ -384,7 +384,7 @@ final class LXBridgeEngine: SpiderEngineProtocol {
     func refreshMetadata() async {
         guard let (obj, _) = try? await bridgeCall("list", nil),
               let plugin = obj["plugin"] as? [String: Any],
-              let sources = plugin["sources"] as? [String: Any] else { return }
+              let sources = plugin["sources"] as? [String: [String: Any]] else { return }
         self.sourcesMeta = sources
     }
 

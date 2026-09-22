@@ -346,11 +346,11 @@ final class AudioPlayerManager: NSObject, ObservableObject {
             completion?(false); return
         }
         let item = queue[currentIndex]
-        guard let key = item.engineKey, LXBridgeEngine.lxKeyMap[key] != nil else {
+        guard LXBridgeEngine.lxKeyMap[item.engineKey] != nil else {
             completion?(false); return
         }
         Task {
-            let engine = LXBridgeEngine(siteKey: key)
+            let engine = LXBridgeEngine(siteKey: item.engineKey)
             do {
                 let url = try await engine.resolvePlayURL(id: item.id, quality: q)
                 guard !url.isEmpty, queue.indices.contains(currentIndex) else {

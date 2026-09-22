@@ -540,7 +540,7 @@ final class NodeRuntimeManager: ObservableObject {
             Task { await self?.runLXHealthCheck() }
         }
         // 启动后立即探一次
-        Task { await self?.runLXHealthCheck() }
+        Task { await self.runLXHealthCheck() }
     }
 
     private func runLXHealthCheck() async {
