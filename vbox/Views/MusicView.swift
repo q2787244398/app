@@ -316,6 +316,14 @@ struct MusicRowView: View {
 
                 Spacer()
 
+                // P2-B2：时长展示（仅 song.metaDuration 存在时显示，无该元数据不显示，不影响 vodRemarks 歌手/来源）
+                if let d = song.metaDuration, d > 0 {
+                    Text(Self.formatDuration(d))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 8)
+                }
+
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 28))
                     .foregroundColor(accentColor.opacity(0.8))
@@ -323,6 +331,14 @@ struct MusicRowView: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+    }
+
+    /// 秒 → mm:ss（超过 1 小时 → h:mm:ss）
+    static func formatDuration(_ seconds: Int) -> String {
+        let s = max(0, seconds)
+        let h = s / 3600, m = (s % 3600) / 60, sec = s % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, sec) }
+        return String(format: "%02d:%02d", m, sec)
     }
 }
 

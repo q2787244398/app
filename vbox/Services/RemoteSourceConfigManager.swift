@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CryptoKit
 
 // MARK: - 远程默认源管理器
 
@@ -179,6 +180,14 @@ final class RemoteSourceConfigManager: ObservableObject {
             if !spiderSites.isEmpty, let baseURL = URL(string: manifest.files.allSources)?.deletingLastPathComponent().absoluteString {
                 await downloadAndCacheSpiderJS(baseURL: baseURL, sites: spiderSites)
             }
+
+            // 4b. 下载并缓存 lx-music 桥接插件（远程上架，P1-A6）
+            //     命中 engineType == "lxMusic" 的站点，按其 pluginPath（相对仓库 sources 目录，
+            //     与 allSources 同目录；如 lx/daxe.js）下载插件 JS 到 Node lx 插件目录，
+            //     并做 md5 完整性校验 + version 版本标记。
+            //     失败不阻塞整个同步：lx 不可用由 LXBridgeEngine 温和降级，不影响视频/远程源。
+            let allSourcesBase = URL(string: manifest.files.allSources)?.deletingLastPathComponent().absoluteString ?? ""
+            await downloadAndCacheLXPlugins(sites: spiderSites, baseURL: allSourcesBase)
 
             updateSuccess(version: manifest.configVersion)
             print("[RemoteSource] 同步完成 version=\(manifest.configVersion)")
@@ -493,6 +502,116 @@ final class RemoteSourceConfigManager: ObservableObject {
         cleanupExpiredJSCache(validKeys: cachedKeys)
 
         print("[RemoteSource] JS 蜘蛛引擎缓存完成，有效缓存: \(cachedKeys.count) 个")
+    }
+
+    // MARK: - lx-music 桥接插件远程缓存（P1-A6）
+
+    /// 下载并缓存 lx-music 桥接插件到 Node lx 插件目录。
+    ///
+    /// 识别规则：站点 `engineType == "lxMusic"`（由远程清单下发，见 spider_sources.json），
+    /// 按其 `pluginPath`（相对仓库 baseURL，如 sources/lx/daxe.js）下载插件 JS 到
+    /// `NodeRuntimeManager.lxPluginsDir`，并以 `md5` 校验完整性、`version` 做版本标记（跳过已同步版本）。
+    ///
+    /// 约束：失败仅打印日志、不抛错——lx 插件不可用由 LXBridgeEngine.isLXReady 温和降级，
+    /// 绝不影响视频 / 网盘 / 远程 kstore 音乐源的主链路。
+    private func downloadAndCacheLXPlugins(sites: [SiteConfig], baseURL: String) async {
+        let lxSites = sites.filter { $0.engineType == "lxMusic" }
+        guard !lxSites.isEmpty else {
+            print("[RemoteSource] 无 lx-music 插件站点，跳过插件缓存")
+            return
+        }
+
+        guard let base = URL(string: baseURL) else { return }
+
+        // Node lx 插件目录（远程下载即远程优先；与 NodeRuntimeManager.prepareRuntimeFiles 兜底配合）
+        let pluginsDir = NodeRuntimeManager.shared.lxPluginsDir
+        let fm = FileManager.default
+        try? fm.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
+
+        print("[RemoteSource] 开始缓存 lx-music 插件，站点数: \(lxSites.count)")
+        var synced: [String] = []
+
+        await withTaskGroup(of: (String, Bool).self) { group in
+            for site in lxSites {
+                let key = site.key.isEmpty ? site.name : site.key
+                guard let pluginPath = site.pluginPath, !pluginPath.isEmpty else { continue }
+                group.addTask {
+                    let ok = await self.syncLXPlugin(key: key,
+                                                      site: site,
+                                                      pluginPath: pluginPath,
+                                                      base: base,
+                                                      dir: pluginsDir)
+                    return (key, ok)
+                }
+            }
+            for await (key, ok) in group {
+                if ok { synced.append(key) }
+            }
+        }
+
+        print("[RemoteSource] lx 插件缓存完成，同步: \(synced.isEmpty ? "无" : synced.joined(separator: ", "))")
+    }
+
+    /// 同步单个 lx 插件：版本标记一致则跳过；否则下载 → md5 校验 → 原子写入 + 写版本标记。
+    private func syncLXPlugin(key: String, site: SiteConfig,
+                              pluginPath: String, base: URL, dir: URL) async -> Bool {
+        // 文件名取 pluginPath 末段（daxe.js / nianxin.js，对应 lx-bridge 的插件 key）
+        let fileName = URL(string: pluginPath)?.lastPathComponent
+            ?? (pluginPath as NSString).lastPathComponent
+        guard fileName.hasSuffix(".js") else {
+            print("[RemoteSource] ⚠️ lx 插件路径异常，跳过: \(pluginPath)")
+            return false
+        }
+        let destURL = dir.appendingPathComponent(fileName)
+        let versionURL = dir.appendingPathComponent(fileName + ".version")
+
+        // 版本标记一致 → 已是最新，跳过下载
+        if let expected = site.version, !expected.isEmpty,
+           let cachedv = try? String(contentsOf: versionURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+           cachedv == expected {
+            print("[RemoteSource] ⏭️ lx 插件版本一致，跳过: \(fileName) (v\(expected))")
+            return true
+        }
+
+        // 解析下载 URL：相对 baseURL；若 pluginPath 为绝对 URL 则直接使用
+        let remoteURL: URL?
+        if pluginPath.hasPrefix("http://") || pluginPath.hasPrefix("https://") {
+            remoteURL = URL(string: pluginPath)
+        } else {
+            let clean = pluginPath.hasPrefix("./") ? String(pluginPath.dropFirst(2)) : pluginPath
+            remoteURL = base.appendingPathComponent(clean).standardized
+        }
+        guard let url = remoteURL else { return false }
+
+        do {
+            let data = try await fetchData(from: url)
+            guard data.count > 100 else {
+                print("[RemoteSource] ⚠️ lx 插件内容过短，丢弃: \(fileName)")
+                return false
+            }
+            // md5 完整性校验（清单下发则强校验；未下发不强校验）
+            let actualMD5 = Data(Insecure.MD5.hash(data: data)).map { String(format: "%02x", $0) }.joined()
+            if let expect = site.md5, !expect.isEmpty,
+               actualMD5.lowercased() != expect.lowercased() {
+                print("[RemoteSource] ❌ lx 插件 md5 不匹配，丢弃: \(fileName) 期望=\(expect) 实际=\(actualMD5)")
+                return false
+            }
+            try fm_createParentIfNeeded(destURL)
+            try data.write(to: destURL, options: .atomic)
+            if let v = site.version, !v.isEmpty {
+                try v.write(to: versionURL, atomically: true, encoding: .utf8)
+            }
+            print("[RemoteSource] ✅ lx 插件已同步: \(fileName) (\(data.count) 字节\(site.version.map { ", v\($0)" } ?? ""))")
+            return true
+        } catch {
+            print("[RemoteSource] ⚠️ lx 插件下载失败，保留旧版: \(fileName): \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func fm_createParentIfNeeded(_ url: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     }
 
     /// Node 托管蜘蛛识别（与 SpiderManager.isNodeSite 同规则，供缓存跳过使用）

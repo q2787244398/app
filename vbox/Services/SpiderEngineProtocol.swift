@@ -41,12 +41,15 @@ enum SpiderEngineType: String, CaseIterable {
     case quickJS = "QuickJS"
     /// Node 常驻系统引擎（形态 A'' 接线，P2-03）—— 不加载本地 JS，桥接 127.0.0.1 Node 进程
     case node = "Node"
+    /// lx-music 桥接引擎（P1-A1）—— 复用 Node 常驻进程的独立 lx 端口，桥接 lx-music 协议插件
+    case nodeLX = "NodeLX"
 
     var displayName: String {
         switch self {
         case .javaScriptCore: return "JSC (Apple)"
         case .quickJS: return "QuickJS"
         case .node: return "Node"
+        case .nodeLX: return "Node-LX"
         }
     }
 }

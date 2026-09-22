@@ -625,6 +625,18 @@ healthServer.listen(healthPort, () => {
     console.log('[NodeBridge] health server on port ' + healthPort);
 });
 
+// ---- P1-A3: lx-music 桥接（可选，同一 Node 进程、独立端口 58083/58084） ----
+// 与 kstore 主端口 58080 互不干扰：第三方 lx 插件仅在 58083 上的独立 HTTP 服务内运行，
+// 加载/异常失败仅记录，绝不阻断 bundle 主链路。插件目录由 LX_PLUGINS_DIR 注入
+// （iOS 指向 Documents/noderuntime/plugins/lx，回退到本目录下 ./lx/plugins）。
+try {
+    require('./lx/lx-bridge.js');
+} catch (lxError) {
+    console.error(
+        '[NodeBridge] lx-music bridge load fail: ' + String(lxError.message || lxError),
+    );
+}
+
 startBundle(process.env.BUNDLE_PATH)
     .then(() => writeStartupAck('ok'))
     .catch((error) => {

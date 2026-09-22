@@ -39,12 +39,19 @@ final class NodeRuntimeManager: ObservableObject {
     let catpawPort: Int = 2333
     /// 健康探测端口（供崩溃检测使用，与 main.js HEALTH_PORT 对齐）
     let healthPort: Int = 58082
+    /// lx-music 桥接服务端口（P1-A3，与 kstore 主端口隔离）
+    let lxPort: Int = 58083
+    /// lx-music 桥接健康端口（P1-A3）
+    let lxHealthPort: Int = 58084
 
     /// 当前生效端口（按部署 bundle 决定，默认 kstore）
     @Published private(set) var activePort: Int = 58080
 
     /// Node 系统是否就绪（启动 ack 通过 + 首次健康检查成功）
     @Published private(set) var isSystemReady = false
+
+    /// lx-music 桥接是否就绪（lx 健康端口探活通过）
+    @Published private(set) var isLXReady = false
 
     /// 状态描述（状态胶囊展示）
     @Published private(set) var statusInfo: String = "node-stopped"
@@ -86,6 +93,12 @@ final class NodeRuntimeManager: ObservableObject {
     var startupAckPath: URL { runtimeDir.appendingPathComponent(".startup.ack") }
     var relistenPath: URL { runtimeDir.appendingPathComponent(".relisten") }
     var relistenAckPath: URL { runtimeDir.appendingPathComponent(".relisten.ack") }
+    /// lx 插件落盘目录（Documents/noderuntime/plugins/lx，P1-A4 / A6 备份还原写此）
+    var lxPluginsDir: URL { runtimeDir.appendingPathComponent("plugins").appendingPathComponent("lx") }
+    /// lx 桥接握手文件
+    var lxAckPath: URL { runtimeDir.appendingPathComponent(".lx.ack") }
+    /// lx 桥接基址
+    var lxBaseURL: String { "http://127.0.0.1:\(lxPort)" }
 
     // MARK: - 私有状态
 
@@ -93,6 +106,8 @@ final class NodeRuntimeManager: ObservableObject {
     private var consecutiveHealthFailures = 0
     private let maxHealthFailures = 3
     private let healthInterval: TimeInterval = 30.0
+    // lx-music 桥接健康监控（P1-A3）
+    private var lxHealthTimer: Timer?
     private var isStarting = false
     private var hasStartedOnce = false
 
@@ -168,6 +183,7 @@ final class NodeRuntimeManager: ObservableObject {
                 statusInfo = "node-ready(\(activePort))"
                 postStatus()
                 startHealthMonitor()
+                startLXHealthMonitor()
             } catch {
                 failStart(error.localizedDescription)
             }
@@ -179,7 +195,10 @@ final class NodeRuntimeManager: ObservableObject {
     func stop() {
         healthTimer?.invalidate()
         healthTimer = nil
+        lxHealthTimer?.invalidate()
+        lxHealthTimer = nil
         isSystemReady = false
+        isLXReady = false
         statusInfo = "node-stopped"
         postStatus()
     }
@@ -228,6 +247,24 @@ final class NodeRuntimeManager: ObservableObject {
                 try? fm.removeItem(at: dst)
                 try fm.copyItem(at: src, to: dst)
             }
+        }
+
+        // lx-music 桥接（P1-A3/A4）：随 App 升级覆盖代码，插件按需补齐
+        let lxSrc = srcDir.appendingPathComponent("lx", isDirectory: true)
+        if fm.fileExists(atPath: lxSrc.path) {
+            let lxBridgeSrc = lxSrc.appendingPathComponent("lx-bridge.js")
+            let lxBridgeDst = runtimeDir.appendingPathComponent("lx").appendingPathComponent("lx-bridge.js")
+            if fm.fileExists(atPath: lxBridgeSrc.path)
+                && (!fm.fileExists(atPath: lxBridgeDst.path) || isResourceNewer(src: lxBridgeSrc, dst: lxBridgeDst)) {
+                try? fm.createDirectory(at: lxBridgeDst.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? fm.removeItem(at: lxBridgeDst)
+                try fm.copyItem(at: lxBridgeSrc, to: lxBridgeDst)
+            }
+            // lx-music 桥接框架随 App 升级部署（lx-bridge.js 是桥接层，不属于第三方插件）。
+            // 插件即服务（P1-A6）：刀源 / 念心插件脚本由远程源仓库经
+            // RemoteSourceConfigManager.syncNow 下发到 lxPluginsDir，App 不再内置插件种子。
+            // 此处仅确保插件目录存在；插件内容以远程同步为准。
+            try? fm.createDirectory(at: lxPluginsDir, withIntermediateDirectories: true)
         }
 
         // 数据文件：仅首次复制；已存在则跳过（保护网盘凭据等用户数据）
@@ -379,6 +416,11 @@ final class NodeRuntimeManager: ObservableObject {
         setenv("HEALTH_PORT", String(healthPort), 1)
         setenv("NODE_PATH", runtimeDir.path, 1)
         setenv("BUNDLE_PATH", activeBundleURL.path, 1)
+        // lx-music 桥接（P1-A3）：独立端口 + 插件目录 + 握手文件
+        setenv("LX_PORT", String(lxPort), 1)
+        setenv("LX_HEALTH_PORT", String(lxHealthPort), 1)
+        setenv("LX_PLUGINS_DIR", lxPluginsDir.path, 1)
+        setenv("LX_ACK_PATH", lxAckPath.path, 1)
         // 移除可能导致父进程看门狗退出的变量
         unsetenv("TVS_PARENT_PID")
 
@@ -484,6 +526,53 @@ final class NodeRuntimeManager: ObservableObject {
                 }
             }
             if attempt < attemptCount - 1 {
+                try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+            }
+        }
+        return false
+    }
+
+    // MARK: - lx-music 桥接健康监控（P1-A3）
+
+    private func startLXHealthMonitor() {
+        lxHealthTimer?.invalidate()
+        lxHealthTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { await self?.runLXHealthCheck() }
+        }
+        // 启动后立即探一次
+        Task { await self?.runLXHealthCheck() }
+    }
+
+    private func runLXHealthCheck() async {
+        let ok = await probeLXHealth()
+        let needPost = ok != isLXReady
+        if ok {
+            if isSystemReady && !isLXReady {
+                nodeLog(.info, "✅ lx-music 桥接就绪（127.0.0.1:\(lxPort)）")
+            }
+        } else {
+            if isLXReady {
+                nodeLog(.warn, "⚠️ lx-music 桥接探活失败，标记不可用（kstore 主链路不受影响）")
+            }
+        }
+        isLXReady = ok
+        if needPost { postStatus() }
+    }
+
+    private func probeLXHealth(retries: Int = 8, retryDelay: TimeInterval = 0.4) async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:\(lxHealthPort)/health") else { return false }
+        for attempt in 0..<retries {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 2
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    return true
+                }
+            } catch {
+                // fallthrough retry
+            }
+            if attempt < retries - 1 {
                 try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
             }
         }

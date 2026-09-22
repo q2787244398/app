@@ -46,11 +46,23 @@ struct SiteConfig: Codable {
     /// 站点分组标记：group == "node" 表示 Node 常驻系统托管源（node 识别辅助标记）
     let group: String?
 
+    // P1-A6（远程上架）：lx-music 桥接插件属性，随远程清单下发。api 为空、由 bridge 引擎按 pluginPath 托管。
+    /// 引擎类型标记：lxMusic（走 LXBridgeEngine）、node、空（普通 JS/Python）。
+    let engineType: String?
+    /// lx 插件脚本相对仓库路径（如 sources/lx/daxe.js），用于远程下载
+    let pluginPath: String?
+    /// 插件版本（与插件 @version 对齐，用于远程更新比对）
+    let version: String?
+    /// 插件脚本 MD5（完整性校验）
+    let md5: String?
+
     init(key: String, name: String, type: Int, api: String? = nil,
          searchable: Int? = nil, quickSearch: Int? = nil, filterable: Int? = nil,
          ext: String? = nil, playerType: Int? = nil, jar: String? = nil,
          changeable: Int? = nil, playStrategy: String? = nil,
-         playMode: String? = nil, panHosts: [String]? = nil, group: String? = nil) {
+         playMode: String? = nil, panHosts: [String]? = nil, group: String? = nil,
+         engineType: String? = nil, pluginPath: String? = nil,
+         version: String? = nil, md5: String? = nil) {
         self.key = key
         self.name = name
         self.type = type
@@ -66,6 +78,10 @@ struct SiteConfig: Codable {
         self.playMode = playMode
         self.panHosts = panHosts
         self.group = group
+        self.engineType = engineType
+        self.pluginPath = pluginPath
+        self.version = version
+        self.md5 = md5
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +107,10 @@ struct SiteConfig: Codable {
         playMode = try? container.decode(String.self, forKey: .playMode)
         panHosts = try? container.decode([String].self, forKey: .panHosts)
         group = try? container.decode(String.self, forKey: .group)
+        engineType = try? container.decode(String.self, forKey: .engineType)
+        pluginPath = try? container.decode(String.self, forKey: .pluginPath)
+        version = try? container.decode(String.self, forKey: .version)
+        md5 = try? container.decode(String.self, forKey: .md5)
 
         // ext：兼容字符串和对象
         if let extStr = try? container.decode(String.self, forKey: .ext) {
@@ -108,6 +128,7 @@ struct SiteConfig: Codable {
         case key, name, type, api, searchable, quickSearch, filterable
         case ext, playerType, jar, changeable, playStrategy
         case playMode, panHosts, group
+        case engineType, pluginPath, version, md5
     }
 }
 
@@ -181,11 +202,16 @@ struct VodItem: Codable, Identifiable {
     let customHeaders: [String: String]?
     /// 追踪数据来源引擎的 key，用于精确匹配详情和播放地址
     var engineKey: String?
+    /// P2-B2/B3：lx 插件返回的元数据（可选，视频/网盘/普通音乐源留空，不影响既有解码）
+    var metaDuration: Int?        // 时长（秒，由 lx interval 格式化串解析）
+    var albumName: String?        // 专辑名
+    var availQualities: [String]  // 可选音质档位（读插件 qualitys 声明）
 
     init(vodId: String, vodName: String, vodPic: String, vodRemarks: String? = nil,
          vodYear: String? = nil, vodArea: String? = nil, vodDirector: String? = nil,
          vodActor: String? = nil, vodContent: String? = nil, vodPlayFrom: String? = nil,
-         vodPlayUrl: String? = nil, customHeaders: [String: String]? = nil, engineKey: String? = nil) {
+         vodPlayUrl: String? = nil, customHeaders: [String: String]? = nil, engineKey: String? = nil,
+         metaDuration: Int? = nil, albumName: String? = nil, availQualities: [String] = []) {
         self.vodId = vodId
         self.vodName = vodName
         self.vodPic = vodPic
@@ -199,6 +225,9 @@ struct VodItem: Codable, Identifiable {
         self.vodPlayUrl = vodPlayUrl
         self.customHeaders = customHeaders
         self.engineKey = engineKey
+        self.metaDuration = metaDuration
+        self.albumName = albumName
+        self.availQualities = availQualities
     }
 
     enum CodingKeys: String, CodingKey {
@@ -215,6 +244,29 @@ struct VodItem: Codable, Identifiable {
         case vodPlayUrl = "vod_play_url"
         case customHeaders
         case engineKey
+        case metaDuration, albumName, availQualities
+    }
+
+    /// 显式解码：新增元数据字段全部 decodeIfPresent/默认回退，
+    /// 保证不含新字段的旧 JSON（视频/网盘/远程源）仍可安全解码，不破坏既有链路。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        vodId = try c.decode(String.self, forKey: .vodId)
+        vodName = try c.decode(String.self, forKey: .vodName)
+        vodPic = try c.decode(String.self, forKey: .vodPic)
+        vodRemarks = try c.decodeIfPresent(String.self, forKey: .vodRemarks)
+        vodYear = try c.decodeIfPresent(String.self, forKey: .vodYear)
+        vodArea = try c.decodeIfPresent(String.self, forKey: .vodArea)
+        vodDirector = try c.decodeIfPresent(String.self, forKey: .vodDirector)
+        vodActor = try c.decodeIfPresent(String.self, forKey: .vodActor)
+        vodContent = try c.decodeIfPresent(String.self, forKey: .vodContent)
+        vodPlayFrom = try c.decodeIfPresent(String.self, forKey: .vodPlayFrom)
+        vodPlayUrl = try c.decodeIfPresent(String.self, forKey: .vodPlayUrl)
+        customHeaders = try c.decodeIfPresent([String: String].self, forKey: .customHeaders)
+        engineKey = try c.decodeIfPresent(String.self, forKey: .engineKey)
+        metaDuration = try c.decodeIfPresent(Int.self, forKey: .metaDuration)
+        albumName = try c.decodeIfPresent(String.self, forKey: .albumName)
+        availQualities = try c.decodeIfPresent([String].self, forKey: .availQualities) ?? []
     }
 }
 

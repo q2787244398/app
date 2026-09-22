@@ -201,9 +201,25 @@ class SpiderManager: ObservableObject {
     }
 
     /// 注册 Node 托管蜘蛛引擎（不下载 JS，直接桥接常驻进程）
+    ///
+    /// A2 分流：lx-music 音乐源（nodejs_musicaidaxe / nodejs_musicainianxin，白名单见
+    /// LXBridgeEngine.lxKeyMap）走独立 LXBridgeEngine（engineType = .nodeLX），
+    /// 与视频 / 网盘 / kstore 音乐源完全隔离，互不影响。
     private func registerNodeEngine(for site: SiteConfig) {
         let key = site.key.isEmpty ? site.name : site.key
         if engines[key] != nil { return }
+        // 远程驱动识别（P1-A6）：清单 engineType == "lxMusic" 优先走 LXBridgeEngine；
+        // 兼容旧清单/本地订阅未带 engineType 时，回退到 lxKeyMap 白名单。
+        let isLX = (site.engineType?.lowercased() == "lxmusic") || LXBridgeEngine.lxKeyMap[key] != nil
+        if isLX {
+            let lxEngine = LXBridgeEngine(siteKey: key)
+            engines[key] = lxEngine
+            engineTypes[key] = .nodeLX
+            if !subscribedSites.contains(key) { subscribedSites.append(key) }
+            Task { await lxEngine.refreshMetadata() }
+            AppLogStore.shared.info(.spider, "[SpiderManager] ✅ lx 音乐源注册: \(site.name) (\(key)) → plugin=\(lxEngine.pluginKey)")
+            return
+        }
         let engine = NodeSpiderEngine(siteKey: key)
         engines[key] = engine
         engineTypes[key] = .node
@@ -5457,6 +5473,28 @@ globalThis.__JS_SPIDER__ = _spider;
               let engine = engines[key] else { return [] }
 
         await waitForNodeReadyIfNeeded()
+
+        // P1-A5：lx-music 源独立走桥接搜索（多平台聚合）。其 callSearchContent 为空实现，
+        // 公共协议路径不进入视频搜索返回集 —— 视频 / 远程源全程零接触。
+        if let lx = engine as? LXBridgeEngine {
+            guard NodeRuntimeManager.shared.isLXReady else {
+                print("[SpiderManager] musicSearch[\(source.name)] lx 未就绪")
+                return []
+            }
+            var all: [VodItem] = []
+            for src in lx.supportedSources {
+                guard let found = try? await lx.searchSongs(keyword: keyword, source: src, page: pg) else { continue }
+                for var item in found {
+                    item.engineKey = key
+                    if item.vodRemarks == nil || item.vodRemarks?.isEmpty == true {
+                        item.vodRemarks = source.name
+                    }
+                    all.append(item)
+                }
+            }
+            return all
+        }
+
         do {
             let result = try engine.callSearchContent(keyword: keyword, pg: pg)
             var list = result.list ?? []
@@ -5504,6 +5542,20 @@ globalThis.__JS_SPIDER__ = _spider;
               let engine = engines[key] else { return (nil, nil) }
 
         await waitForNodeReadyIfNeeded()
+
+        // P1-A5：lx 源走并发直链解析（多平台竞速回退），playFrom = 插件 key。
+        // 不影响其他音乐源的公共 detail 路径。
+        if let lx = engine as? LXBridgeEngine {
+            guard NodeRuntimeManager.shared.isLXReady else { return (nil, nil) }
+            do {
+                let url = try await lx.resolvePlayURL(id: vodId, quality: nil)
+                return (url, lx.pluginKey)
+            } catch {
+                print("[SpiderManager] musicUrl[\(source.name)] 失败: \(error)")
+                return (nil, nil)
+            }
+        }
+
         do {
             let result = try engine.callDetailContent(ids: vodId)
             if let item = result.list?.first {

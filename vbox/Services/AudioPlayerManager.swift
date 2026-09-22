@@ -37,6 +37,14 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
     let sourceName: String  // 源名称
     let engineKey: String   // 引擎 Key
 
+    // P1-A0 / P3：扩展字段。均以可空/默认值声明，配合 decodeIfPresent 保证旧存档解码不崩溃。
+    var quality: String? = nil          // 音质标识（128k/320k/flac...）
+    var qualityIndex: Int? = nil        // 当前音质在 availQualities 中的下标（归档用）
+    var lyric: String? = nil            // LRC 歌词文本
+    var duration: Int? = nil            // 时长（秒，插件返回 interval 格式化后解析）
+    var albumName: String? = nil        // 专辑名
+    var availQualities: [String] = []   // 可选音质档位（读插件 qualitys 声明）
+
     init(from song: VodItem, sourceName: String, engineKey: String, playURL: String) {
         self.id = song.vodId
         self.name = song.vodName
@@ -45,6 +53,10 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
         self.playURL = playURL
         self.sourceName = sourceName
         self.engineKey = engineKey
+        // P2-B2/B3 / P3-C1：透传 lx 搜索结果元数据（时长/专辑/可发音质）
+        self.duration = song.metaDuration
+        self.albumName = song.albumName
+        if !song.availQualities.isEmpty { self.availQualities = song.availQualities }
     }
 
     /// 直接构造（用于榜单/歌单：spider 把多首歌曲拼进一个 playUrl，这里按解析结果逐首构造）
@@ -56,6 +68,64 @@ struct MusicQueueItem: Identifiable, Equatable, Codable {
         self.playURL = playURL
         self.sourceName = sourceName
         self.engineKey = engineKey
+    }
+
+    /// 复制构造（P3-C1 音质切换用）：保留除 playURL/quality 外的全部字段，
+    /// 以便在保留播放进度的同时无缝替换直链。
+    init(copying base: MusicQueueItem, playURL: String, quality: String?) {
+        self.id = base.id
+        self.name = base.name
+        self.artist = base.artist
+        self.coverURL = base.coverURL
+        self.playURL = playURL
+        self.sourceName = base.sourceName
+        self.engineKey = base.engineKey
+        self.quality = quality
+        self.qualityIndex = base.qualityIndex
+        self.lyric = base.lyric
+        self.duration = base.duration
+        self.albumName = base.albumName
+        self.availQualities = base.availQualities
+    }
+
+    // ---- P1-A0：显式 Codable，新增字段全部 decodeIfPresent，缺失时回退默认值，旧存档可安全解码 ----
+    private enum CodingKeys: String, CodingKey {
+        case id, name, artist, coverURL, playURL, sourceName, engineKey
+        case quality, qualityIndex, lyric, duration, albumName, availQualities
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        artist = try c.decode(String.self, forKey: .artist)
+        coverURL = try c.decode(String.self, forKey: .coverURL)
+        playURL = try c.decode(String.self, forKey: .playURL)
+        sourceName = try c.decode(String.self, forKey: .sourceName)
+        engineKey = try c.decode(String.self, forKey: .engineKey)
+        quality = try c.decodeIfPresent(String.self, forKey: .quality)
+        qualityIndex = try c.decodeIfPresent(Int.self, forKey: .qualityIndex)
+        lyric = try c.decodeIfPresent(String.self, forKey: .lyric)
+        duration = try c.decodeIfPresent(Int.self, forKey: .duration)
+        albumName = try c.decodeIfPresent(String.self, forKey: .albumName)
+        availQualities = try c.decodeIfPresent([String].self, forKey: .availQualities) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(artist, forKey: .artist)
+        try c.encode(coverURL, forKey: .coverURL)
+        try c.encode(playURL, forKey: .playURL)
+        try c.encode(sourceName, forKey: .sourceName)
+        try c.encode(engineKey, forKey: .engineKey)
+        try c.encodeIfPresent(quality, forKey: .quality)
+        try c.encodeIfPresent(qualityIndex, forKey: .qualityIndex)
+        try c.encodeIfPresent(lyric, forKey: .lyric)
+        try c.encodeIfPresent(duration, forKey: .duration)
+        try c.encodeIfPresent(albumName, forKey: .albumName)
+        try c.encode(availQualities, forKey: .availQualities)
     }
 }
 
@@ -143,7 +213,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
         startPlayback()
     }
 
-    private func startPlayback() {
+    private func startPlayback(seekTo initialTime: Double? = nil) {
         guard queue.indices.contains(currentIndex) else { return }
         let item = queue[currentIndex]
 
@@ -183,6 +253,11 @@ final class AudioPlayerManager: NSObject, ObservableObject {
                 if item.status == .readyToPlay {
                     self.duration = item.duration.seconds > 0 ? item.duration.seconds : 0
                     self.isLoading = false
+                    // P3-C1：音质切换时保留原进度（±3s 内），否则从头播放
+                    if let t = initialTime, t > 0 {
+                        self.player?.seek(to: CMTime(seconds: t, preferredTimescale: 600),
+                                          toleranceBefore: .zero, toleranceAfter: .zero)
+                    }
                     self.player?.play()
                     self.isPlaying = true
                     self.updateNowPlayingInfo()
@@ -260,6 +335,38 @@ final class AudioPlayerManager: NSObject, ObservableObject {
         player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
         currentTime = seconds
         updateNowPlayingInfo()
+    }
+
+    // MARK: - P3-C1：多音质切换（仅 lx 音乐源）
+
+    /// 重新走 lx musicUrl 拉取指定档位直链，用 replaceCurrentItem 无缝衔接并保留播放进度。
+    /// 非 lx 音乐源（不支持音质切换）直接回调 false 不做任何改动，绝不影响视频/普通音乐源。
+    func switchQuality(_ q: String, completion: ((Bool) -> Void)? = nil) {
+        guard currentIndex >= 0, queue.indices.contains(currentIndex) else {
+            completion?(false); return
+        }
+        let item = queue[currentIndex]
+        guard let key = item.engineKey, LXBridgeEngine.lxKeyMap[key] != nil else {
+            completion?(false); return
+        }
+        Task {
+            let engine = LXBridgeEngine(siteKey: key)
+            do {
+                let url = try await engine.resolvePlayURL(id: item.id, quality: q)
+                guard !url.isEmpty, queue.indices.contains(currentIndex) else {
+                    completion?(false); return
+                }
+                let progress = currentTime
+                let rebuilt = MusicQueueItem(copying: queue[currentIndex], playURL: url, quality: q)
+                queue[currentIndex] = rebuilt
+                saveQueue()
+                startPlayback(seekTo: progress)
+                completion?(true)
+            } catch {
+                print("[AudioPlayer] 音质切换失败: \(error)")
+                completion?(false)
+            }
+        }
     }
 
     func playNext() {

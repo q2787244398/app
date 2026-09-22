@@ -260,6 +260,11 @@ struct MusicPlayerFullView: View {
     @State private var seekValue: Double = 0
     @State private var isSeeking: Bool = false
     @State private var showQueue: Bool = false
+    // P3-C2：歌词状态（仅 lx 完整型插件如刀源能取到，念心留空隐藏）
+    @State private var lyricLines: [(TimeInterval, String)] = []
+    @State private var isLyricLoading = false
+    // P3-C1：音质切换中状态
+    @State private var isSwitchingQuality = false
 
     private var accentColor: Color {
         if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
@@ -420,12 +425,173 @@ struct MusicPlayerFullView: View {
                     .padding(.top, 12)
                 }
 
+                // P3-C1：音质切换（仅 lx 源且插件声明多档音质时显示）
+                qualitySwitchBar
+
+                // P3-C2：歌词区（仅 lx 完整型插件取到歌词时显示，否则整区隐藏）
+                lyricSection
+
                 Spacer(minLength: 20)
             }
         }
         .sheet(isPresented: $showQueue) {
             MusicQueueSheet()
         }
+        // P3-C2：当前曲目变化时异步拉取歌词
+        .onChange(of: player.currentSong?.id) { _ in
+            loadLyricForCurrent()
+        }
+        .onAppear { loadLyricForCurrent() }
+    }
+
+    // MARK: - P3-C2 歌词加载
+    private func loadLyricForCurrent() {
+        guard let song = player.currentSong,
+              let key = song.engineKey,
+              LXBridgeEngine.lxKeyMap[key] != nil,
+              NodeRuntimeManager.shared.isLXReady else {
+            lyricLines = []
+            isLyricLoading = false
+            return
+        }
+        isLyricLoading = true
+        let engine = LXBridgeEngine(siteKey: key)
+        Task { @MainActor in
+            let raw = await engine.fetchLyricForSong(id: song.id)
+            lyricLines = Self.parseLRC(raw)
+            isLyricLoading = false
+        }
+    }
+
+    /// P3-C2：解析 LRC 文本 → 排序后的 (时间, 歌词) 行
+    private static func parseLRC(_ lrc: String) -> [(TimeInterval, String)] {
+        guard !lrc.isEmpty else { return [] }
+        var out: [(TimeInterval, String)] = []
+        guard let regex = try? NSRegularExpression(pattern: "\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d{1,3}))?\\]") else { return [] }
+        for rawLine in lrc.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { continue }
+            let ns = line as NSString
+            let matches = regex.matches(in: line, range: NSRange(location: 0, length: ns.length))
+            guard !matches.isEmpty else { continue }
+            let matchedEnd = matches.map { $0.range.location + $0.range.length }.max() ?? 0
+            let lyric = ns.substring(from: matchedEnd)
+            for m in matches {
+                let mm = Double((ns.substring(with: m.range(at: 1)) as NSString).doubleValue) ?? 0
+                let ss = Double((ns.substring(with: m.range(at: 2)) as NSString).doubleValue) ?? 0
+                var t = mm * 60 + ss
+                if m.numberOfRanges > 3, m.range(at: 3).location != NSNotFound {
+                    let fracStr = ns.substring(with: m.range(at: 3))
+                    let frac = (fracStr as NSString).doubleValue
+                    t += frac / pow(10, Double(fracStr.count))
+                }
+                if !lyric.isEmpty { out.append((t, lyric)) }
+            }
+        }
+        return out.sorted { $0.0 < $1.0 }
+    }
+
+    /// P3-C2：按当前播放时间返回激活歌词行下标
+    private var activeLyricIndex: Int {
+        guard let song = player.currentSong, let k = song.engineKey, LXBridgeEngine.lxKeyMap[k] != nil else { return -1 }
+        let t = player.currentTime
+        guard let i = lyricLines.lastIndex(where: { $0.0 <= t }) else {
+            return lyricLines.isEmpty ? -1 : 0
+        }
+        return i
+    }
+}
+
+// MARK: - 音质切换 + 歌词 UI
+
+extension MusicPlayerFullView {
+    @ViewBuilder private var qualitySwitchBar: some View {
+        if let song = player.currentSong,
+           let key = song.engineKey, LXBridgeEngine.lxKeyMap[key] != nil,
+           song.availQualities.count > 1 {
+            let qualities = uniquePreservingOrder(song.availQualities)
+            HStack(spacing: 10) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+                ForEach(Array(qualities.enumerated()), id: \.element) { _, q in
+                    let selected = song.quality == q
+                    Button(action: {
+                        guard !isSwitchingQuality, song.quality != q else { return }
+                        isSwitchingQuality = true
+                        player.switchQuality(q) { _ in
+                            isSwitchingQuality = false
+                        }
+                    }) {
+                        Text(q)
+                            .font(.system(size: 11, weight: selected ? .bold : .regular))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule().fill(selected ? accentColor : Color.white.opacity(0.15))
+                            )
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSwitchingQuality)
+                }
+            }
+            .padding(.top, 14)
+        }
+    }
+
+    @ViewBuilder private var lyricSection: some View {
+        if isLyricLoading {
+            HStack(spacing: 6) {
+                ProgressView().tint(.white.opacity(0.6))
+                Text("歌词加载中…").font(.system(size: 12)).foregroundColor(.white.opacity(0.5))
+            }
+            .padding(.top, 12)
+            .frame(height: 90)
+            .frame(maxWidth: .infinity)
+        } else if !lyricLines.isEmpty {
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 6) {
+                        ForEach(Array(lyricLines.enumerated()), id: \.offset) { i, pair in
+                            Text(pair.1)
+                                .font(.system(size: 14))
+                                .foregroundColor(i == activeLyricIndex ? accentColor : .white.opacity(0.55))
+                                .fontWeight(i == activeLyricIndex ? .bold : .regular)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+                                .id(i)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                .frame(height: 200)
+                .overlay(alignment: .bottom) {
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.35)],
+                        startPoint: .center, endPoint: .bottom
+                    )
+                    .frame(height: 24)
+                    .allowsHitTesting(false)
+                }
+                .onChange(of: activeLyricIndex) { newIndex in
+                    if newIndex >= 0 {
+                        withAnimation(.linear(duration: 0.2)) {
+                            proxy.scrollTo(newIndex, anchor: .center)
+                        }
+                    }
+                }
+            }
+            .padding(.top, 12)
+        } else {
+            // 无歌词（念心等）：整区隐藏
+            EmptyView()
+        }
+    }
+
+    private func uniquePreservingOrder(_ arr: [String]) -> [String] {
+        var seen = Set<String>()
+        return arr.filter { seen.insert($0).inserted }
     }
 
     private func formatTime(_ seconds: Double) -> String {

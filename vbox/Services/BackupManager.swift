@@ -130,11 +130,47 @@ struct CredentialsSnapshot: Codable {
 }
 
 /// 远程源缓存快照（manifest + all_sources + JS 蜘蛛引擎缓存；version 用于还原时的新旧判断）
+///
+/// A6 扩展：新增 lxPlugins（lx-music 桥接插件，key=插件文件名 daxe/nianxin…）。
+/// 采用自定义编解码：旧备份无该字段时解码得空字典，保证向后兼容。
 struct RemoteSourcesSnapshot: Codable {
     var version: String
     var manifest: Data?
     var allSources: Data?
     var spiderJS: [String: Data]
+    /// lx-music 桥接插件（P1-A6），key 为插件文件名（如 daxe / nianxin）
+    var lxPlugins: [String: Data] = [:]
+
+    private enum CodingKeys: String, CodingKey {
+        case version, manifest, allSources, spiderJS, lxPlugins
+    }
+
+    init(version: String, manifest: Data? = nil, allSources: Data? = nil,
+         spiderJS: [String: Data] = [:], lxPlugins: [String: Data] = [:]) {
+        self.version = version
+        self.manifest = manifest
+        self.allSources = allSources
+        self.spiderJS = spiderJS
+        self.lxPlugins = lxPlugins
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(String.self, forKey: .version)
+        manifest = try c.decodeIfPresent(Data.self, forKey: .manifest)
+        allSources = try c.decodeIfPresent(Data.self, forKey: .allSources)
+        spiderJS = try c.decodeIfPresent([String: Data].self, forKey: .spiderJS) ?? [:]
+        lxPlugins = try c.decodeIfPresent([String: Data].self, forKey: .lxPlugins) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encodeIfPresent(manifest, forKey: .manifest)
+        try c.encodeIfPresent(allSources, forKey: .allSources)
+        try c.encode(spiderJS, forKey: .spiderJS)
+        try c.encode(lxPlugins, forKey: .lxPlugins)
+    }
 }
 
 /// 用于统计 all_sources.json 中站点数量（仅计数，不关心站点具体字段）。
@@ -327,11 +363,23 @@ final class BackupManager {
             }
         }
 
+        // A6：收集 lx-music 桥接插件（Documents/noderuntime/plugins/lx/*.js）
+        var lxPlugins: [String: Data] = [:]
+        let lxPluginDir = NodeRuntimeManager.shared.lxPluginsDir
+        if let files = try? fm.contentsOfDirectory(at: lxPluginDir, includingPropertiesForKeys: nil) {
+            for file in files where file.pathExtension == "js" {
+                if let data = try? Data(contentsOf: file) {
+                    lxPlugins[file.deletingPathExtension().lastPathComponent] = data
+                }
+            }
+        }
+
         return RemoteSourcesSnapshot(
             version: mgr.lastConfigVersion,
             manifest: read("manifest.json"),
             allSources: read("all_sources.json"),
-            spiderJS: spiderJS
+            spiderJS: spiderJS,
+            lxPlugins: lxPlugins
         )
     }
 
@@ -667,6 +715,18 @@ final class BackupManager {
                 try? js.write(to: jsDir.appendingPathComponent("\(key).js"), options: .atomic)
             }
             restoredCount += snapshot.spiderJS.count
+        }
+
+        // A6：还原 lx-music 桥接插件到 lxPluginsDir（下次 App 重启 / relisten 由
+        // NodeRuntimeManager 加载生效；若资源更新则下次启动自动覆盖，符合"种子优先"）
+        if !snapshot.lxPlugins.isEmpty {
+            let lxPluginDir = NodeRuntimeManager.shared.lxPluginsDir
+            try? fm.createDirectory(at: lxPluginDir, withIntermediateDirectories: true)
+            // 还原时以备份为准（用户可能已自定义插件），不因缺失而回退种子。
+            for (key, js) in snapshot.lxPlugins {
+                try? js.write(to: lxPluginDir.appendingPathComponent("\(key).js"), options: .atomic)
+            }
+            restoredCount += snapshot.lxPlugins.count
         }
 
         mgr.refreshLoadState()
