@@ -274,29 +274,40 @@ struct MusicPlayerFullView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // 背景
+            // 背景：永远先铺一层深色渐变兜底，保证封面加载失败/无歌时
+            // 白色顶栏（退出箭头/标题）与控制按钮始终清晰可见。
+            // 修复 P1-A9：之前只在 coverURL 为空时走渐变，
+            // 只要 coverURL 字符串非空（即使图加载失败）就进 AsyncImage 分支，
+            // placeholder 是 .systemBackground(白) + 40% 黑叠层 = 浅灰，
+            // 白 chevron.down 在浅灰上对比度极低，看起来像"没有退出键"。
+            LinearGradient(
+                colors: [accentColor.opacity(0.92), accentColor.opacity(0.55)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            // 封面图（加载成功才显示，失败时完全不遮挡渐变底）
             if let song = player.currentSong, let url = URL(string: song.coverURL) {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Color(.systemBackground)
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fill)
+                            .ignoresSafeArea()
+                            .overlay(Color.black.opacity(0.4))
+                            .blur(radius: 20)
+                    case .failure:
+                        // 加载失败 → 让底层渐变透出来，什么都不画
+                        Color.clear
+                    default:
+                        // 加载中 → 用深色半透明占位，保证白字/白按钮可读
+                        Color.black.opacity(0.25).ignoresSafeArea()
+                    }
                 }
-                .ignoresSafeArea()
-                .overlay(Color.black.opacity(0.4))
-                .blur(radius: 20)
-            } else {
-                // 无封面/无歌曲时用主题色渐变打底，确保白色顶栏（退出箭头/标题）与控制按钮始终可见，
-                // 避免“白色箭头撞白色背景”导致退出键看似不存在。
-                LinearGradient(
-                    colors: [accentColor.opacity(0.92), accentColor.opacity(0.55)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
             }
 
             VStack {
-                // 顶部
+                // 顶部栏（额外加深色磨砂底，极端情况下也能看清白箭头）
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.down")
@@ -319,7 +330,12 @@ struct MusicPlayerFullView: View {
                     }
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 10)
+                .padding(.vertical, 10)
+                .background(
+                    // P1-A9：顶栏加一层极淡的深色磨砂，给退出键再上一层保险
+                    Color.black.opacity(0.15)
+                        .blur(radius: 8)
+                )
 
                 Spacer()
 
