@@ -169,7 +169,7 @@ class AppSettings: ObservableObject {
         remoteDefaultSourceEnabled = UserDefaults.standard.object(forKey: Self.remoteDefaultSourceEnabledKey) as? Bool ?? true
         bundleSourcesEnabled = UserDefaults.standard.object(forKey: Self.bundleSourcesEnabledKey) as? Bool ?? false
 
-        // 版本升级时清除旧的 manifest URL，让用户自动用回默认主地址
+        // 版本升级时清除旧的 manifest URL（不再内置默认地址，由用户自行配置）
         let currentAppVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         let lastAppVersion = UserDefaults.standard.string(forKey: Self.lastAppVersionKey) ?? ""
         if !currentAppVersion.isEmpty && currentAppVersion != lastAppVersion {

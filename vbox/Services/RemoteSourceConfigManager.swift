@@ -45,7 +45,9 @@ final class RemoteSourceConfigManager: ObservableObject {
         }
     }
 
-    static let defaultManifestURL = "https://vbox-ai.github.io/api/sources/manifest.json"
+    /// 不再内置默认远程源地址。留空即视为未配置（远程源同步不可用），
+    /// 用户需自行在设置里填入远程源 manifest 地址后才启用远程 JS/API/云/音乐源。
+    static let defaultManifestURL = ""
 
     @Published var remoteDefaultSourceEnabled: Bool {
         didSet { UserDefaults.standard.set(remoteDefaultSourceEnabled, forKey: RemoteSourceConfigKeys.remoteDefaultSourceEnabled) }
@@ -265,13 +267,10 @@ final class RemoteSourceConfigManager: ObservableObject {
 
     /// 供非 MainActor 上下文读取用户可配置的默认 manifest URL。
     /// 与 shared.defaultManifestURL 共用同一个 UserDefaults 键，保证与 @Published 值一致。
-    /// 区分两种场景：
-    ///   - 从未配置过（键不存在）：返回内置默认地址，保证全新安装可直接使用远程源；
-    ///   - 用户主动清空（键存在但为空）：返回空串，由调用方向用户提示"请先添加内置远程源"。
-    /// 不再静默回退内置地址，避免让用户误以为已配置了地址却使用内置地址。
+    /// 不内置任何默认地址：未配置或留空均返回空串（视为未启用远程源）。
     nonisolated static func currentDefaultManifestURL() -> String {
         guard let stored = UserDefaults.standard.string(forKey: RemoteSourceConfigKeys.defaultManifestURL) else {
-            // 从未配置过，走内置默认
+            // 从未配置过，也没有内置默认 → 返回空串
             return Self.defaultManifestURL
         }
         return stored.trimmingCharacters(in: .whitespacesAndNewlines)
