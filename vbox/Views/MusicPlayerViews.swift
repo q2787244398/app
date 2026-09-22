@@ -285,7 +285,14 @@ struct MusicPlayerFullView: View {
                 .overlay(Color.black.opacity(0.4))
                 .blur(radius: 20)
             } else {
-                Color(.systemBackground).ignoresSafeArea()
+                // 无封面/无歌曲时用主题色渐变打底，确保白色顶栏（退出箭头/标题）与控制按钮始终可见，
+                // 避免“白色箭头撞白色背景”导致退出键看似不存在。
+                LinearGradient(
+                    colors: [accentColor.opacity(0.92), accentColor.opacity(0.55)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
             }
 
             VStack {
