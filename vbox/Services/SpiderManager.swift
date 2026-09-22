@@ -517,6 +517,26 @@ globalThis.__JS_SPIDER__ = _spider;
         }
         await loadSitesFromSubscription()
         savedURLs = subManager.configURLs
+
+        // ★ 孤儿引擎清理：清除已不在当前 allSites 中的残留引擎。
+        //   触发场景：清理远程默认源缓存后，缓存文件已删除，loadSitesFromSubscription
+        //   重建的 allSites 不再包含远程 JS/Node 源（spiderSites 为空时不会重新注册），
+        //   但这些源此前已注册在 engines 中。若不清理，切换源/dev 首页遍历 engines 时
+        //   仍会显示已删除的 JS 视频源与音乐源——这就是"清缓存后远程源还在"的根因。
+        //   仅按 key 是否仍属于有效站点判断；订阅源引擎的 key 一定在重建后的 allSites 中，不受影响。
+        let validKeys = Set(allSites.map { $0.key })
+        let orphanKeys = engines.keys.filter { !validKeys.contains($0) }
+        for key in orphanKeys {
+            engines.removeValue(forKey: key)
+            if let idx = subscribedSites.firstIndex(of: key) {
+                subscribedSites.remove(at: idx)
+            }
+            engineTypes.removeValue(forKey: key)
+        }
+        if !orphanKeys.isEmpty {
+            AppLogStore.shared.info(.spider, "[SpiderManager] 🧹 清理 \(orphanKeys.count) 个孤儿引擎（已不在有效站点集合中）: \(orphanKeys.sorted().joined(separator: ", "))")
+        }
+
         isLoading = false
         NotificationCenter.default.post(name: .spiderSitesDidUpdate, object: nil)
     }
@@ -4838,19 +4858,42 @@ globalThis.__JS_SPIDER__ = _spider;
         }
 
         for key in engineKeys {
-            if items.contains(where: { $0.id == "js_\(key)" }) { continue }
+            if items.contains(where: { $0.id == "js_\(key)" || $0.id == "music_\(key)" }) { continue }
             let siteConfig = allSites.first(where: { $0.key == key })
-            items.append(SourceDisplayItem(
-                id: "js_\(key)",
-                name: siteConfig?.name ?? key,
-                category: .jsSpider,
-                supportsHome: true,
-                api: nil,
-                searchUrl: nil,
-                engineKey: key,
-                referer: nil,
-                siteKey: key
-            ))
+            // 音乐源识别：与同步版 fetchAllSourceDisplayItems 保持一致，
+            // 避免异步版把 Node 音乐源（MusicAi* / group=="music"）误归类为 jsSpider，
+            // 导致网络音乐页（getMusicSources 过滤 .music）读共享缓存时拿不到音乐源。
+            let lowerKey = key.lowercased()
+            let lowerApi = siteConfig?.api?.lowercased() ?? ""
+            let isMusic = lowerKey.hasPrefix("nodejs_musicai")
+                || lowerKey.hasPrefix("musicaid")
+                || siteConfig?.group == "music"
+                || lowerApi.contains("musicaid")
+            if isMusic {
+                items.append(SourceDisplayItem(
+                    id: "music_\(key)",
+                    name: siteConfig?.name ?? key,
+                    category: .music,
+                    supportsHome: true,
+                    api: nil,
+                    searchUrl: nil,
+                    engineKey: key,
+                    referer: nil,
+                    siteKey: key
+                ))
+            } else {
+                items.append(SourceDisplayItem(
+                    id: "js_\(key)",
+                    name: siteConfig?.name ?? key,
+                    category: .jsSpider,
+                    supportsHome: true,
+                    api: nil,
+                    searchUrl: nil,
+                    engineKey: key,
+                    referer: nil,
+                    siteKey: key
+                ))
+            }
         }
 
         for site in zhanyuanSites {
