@@ -140,7 +140,10 @@ struct SourceDiscoveryView: View {
             .edgeSwipeBack { onDismiss() }
             .onAppear {
                 if allSources.isEmpty {
+                    // 源发现页只展示视频/网盘/站点等可切换源，音乐源仅在"网络音乐"页单独使用，
+                    // 这里过滤掉，避免音乐源混入视频源切换列表。
                     allSources = SpiderManager.shared.fetchAllSourceDisplayItems()
+                        .filter { $0.category != .music }
                 }
                 if homeData == nil { Task { await loadData() } }
             }

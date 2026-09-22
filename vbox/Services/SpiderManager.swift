@@ -1758,6 +1758,13 @@ globalThis.__JS_SPIDER__ = _spider;
         }
     }
 
+    /// 判断引擎 key 是否为音乐源（音乐源仅在"网络音乐"页使用，不应参与视频搜索/切换列表）。
+    /// key 匹配规则与源列表构造时音乐识别保持一致：MusicAi* / musicaid* / nodejs_musicai*。
+    func isMusicEngineKey(_ key: String) -> Bool {
+        let k = key.lowercased()
+        return k.hasPrefix("musicai") || k.hasPrefix("musicaid") || k.hasPrefix("nodejs_musicai")
+    }
+
     func search(keyword: String, pg: Int = 1) async -> [VodItem] {
         var allResults: [VodItem] = []
 
@@ -1781,6 +1788,8 @@ globalThis.__JS_SPIDER__ = _spider;
         let engineKeys = engines.keys.sorted()
         for key in engineKeys {
             guard key != TencentVideoNativeSpider.siteKey else { continue }
+            // 音乐源不参与视频搜索
+            if isMusicEngineKey(key) { continue }
             let engine = engines[key]!
             let isPython = engine is PythonSpiderEngine
             AppLogStore.shared.info(.spider, "[SpiderManager] 🔍 搜索引擎[\(key)] \(isPython ? "🐍 Python" : "JS") ...")
@@ -2170,7 +2179,7 @@ globalThis.__JS_SPIDER__ = _spider;
                 guard !engineEntries.isEmpty else { return }
 
                 // ★ Python 引擎已拆到通道4，这里只处理 JS/CMS 引擎
-                let jsEntries = engineEntries.filter { !($1 is PythonSpiderEngine) }
+                let jsEntries = engineEntries.filter { !($1 is PythonSpiderEngine) && !isMusicEngineKey($0) }
                 guard !jsEntries.isEmpty else { return }
 
                 await withTaskGroup(of: (key: String, items: [VodItem]?, error: String?).self) { jsGroup in

@@ -137,6 +137,18 @@ struct RemoteSourcesSnapshot: Codable {
     var spiderJS: [String: Data]
 }
 
+/// 用于统计 all_sources.json 中站点数量（仅计数，不关心站点具体字段）。
+/// 数组元素取空 Codable 结构体，即可容忍任意 JSON 对象并正确统计长度。
+private struct RestoredCounter: Codable {
+    struct APISourcesData: Codable { let sites: [Empty]? }
+    struct CloudSourcesData: Codable { let cloudSites: [Empty]? }
+    struct SpiderSourcesData: Codable { let sites: [Empty]? }
+    struct Empty: Codable {}
+    let apiSources: APISourcesData?
+    let cloudSources: CloudSourcesData?
+    let spiderSources: SpiderSourcesData?
+}
+
 // MARK: - 错误与结果
 
 enum BackupError: LocalizedError, Sendable {
@@ -480,16 +492,21 @@ final class BackupManager {
             }
 
             if category == .remoteSources {
-                // 远程源：检测到新版本则跳过（不写入 restored，避免误报还原了旧数据）
-                if try await restoreRemoteSources(data: raw) == nil {
+                // 远程源：写回缓存并重建站点列表。
+                // 返回值 = 还原的远程源站点数（含 API/云/Spider 站源，音乐源也算在内）。
+                // 注意：restoreCategory 对 remoteSources 固定返回 0（远程源在此提前处理），
+                // 若不在此直接用返回值覆盖 totalCounts，结果页会误显示"远程源配置：0 条"。
+                if let sourceCount = try await restoreRemoteSources(data: raw) {
+                    result.restored.append(category)
+                    result.totalCounts[category] = sourceCount
+                    // 还原成功后重建站点列表，使备份中的远程源平台立刻显示出来
+                    AppLogStore.shared.info(.spider, "[BackupManager] 远程源还原成功，重建站点列表")
+                    await SpiderManager.shared.reloadAllSources()
+                } else {
                     result.skippedRemoteSourcesOutdated = true
                     continue
                 }
-                // 还原成功后重建站点列表，使备份中的远程源平台立刻显示出来。
-                // 仅写回缓存文件不会刷新 SpiderManager 内存中的 allSites/engines，
-                // 需调用 reloadAllSources 重建远端源引擎并通知 UI 刷新。
-                AppLogStore.shared.info(.spider, "[BackupManager] 远程源还原成功，重建站点列表")
-                await SpiderManager.shared.reloadAllSources()
+                continue
             }
 
             let count = try restoreCategory(category, data: raw, strategy: strategy, wasEncrypted: envelope.encrypted)
@@ -653,7 +670,19 @@ final class BackupManager {
         }
 
         mgr.refreshLoadState()
-        return restoredCount
+
+        // 返回"还原的远程源数量"用于结果页展示，而不是缓存的条目数：
+        // 解析 all_sources.json 统计 API 源 + 云源 + Spider 站源（含音乐源 MusicAi*），
+        // 使弹窗"远程源配置：N 条"能反映真实还原了多少站点。
+        var sourceCount = 0
+        if let allSources = snapshot.allSources {
+            if let container = try? JSONDecoder().decode(RestoredCounter.self, from: allSources) {
+                sourceCount += container.apiSources?.sites?.count ?? 0
+                sourceCount += container.cloudSources?.cloudSites?.count ?? 0
+                sourceCount += container.spiderSources?.sites?.count ?? 0
+            }
+        }
+        return sourceCount > 0 ? sourceCount : restoredCount
     }
 
     private func downloadExists(_ db: DatabaseManager, _ record: DownloadRecord) -> Bool {

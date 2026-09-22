@@ -85,11 +85,10 @@ struct ContentView: View {
                 .background(settings.usesVisualSkin ? Color.clear : Color(uiColor: .systemBackground))
                 .ignoresSafeArea(.keyboard, edges: .bottom)
 
-                // 远程源状态通知条 + 下载胶囊通知 + Mini Player + 悬浮式底部导航栏
+                // 远程源状态通知条 + 下载胶囊通知 + 悬浮式底部导航栏
                 VStack(spacing: 0) {
                     RemoteSourceStatusBar()
                     DownloadCapsuleNotification()
-                    MiniPlayerBar()
 
                     // 悬浮式底部导航栏
                     if !settings.isTabBarHidden {
@@ -138,6 +137,10 @@ struct ContentView: View {
         .environmentObject(settings)
         .preferredColorScheme(settings.preferredColorScheme)
         .tint(activeTabColor)
+        // 音乐 Mini Player：作为可拖动的全屏浮层，支持左滑关闭、右滑折叠、上下自由移动
+        .overlay(alignment: .bottom) {
+            MiniPlayerBar()
+        }
         // ★ 移除隐式 .animation() 修饰符，避免与 HomeView overlay 的 transition 动画冲突
         // 底栏动画现在由 withAnimation 显式驱动（HomeView.onChange(of: selectedSource) 和 onDismiss）
         .onChange(of: settings.searchRequestId) { _ in
