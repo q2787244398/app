@@ -183,6 +183,21 @@ struct ProfileView: View {
             .padding(.trailing, 16)
             .padding(.top, 8)
 
+            // 左上角退出图标（登录后显示）
+            if isLoggedIn {
+                Button(action: {
+                    showLogoutConfirm = true
+                }) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(accentColor)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 16)
+                .padding(.top, 8)
+            }
+
             if showCloudDriveSort {
                 CloudDriveSortPopup {
                     showCloudDriveSort = false
@@ -303,19 +318,6 @@ struct ProfileView: View {
                 Text("账号：\(account)")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
-
-                // 退出登录
-                Button(action: { showLogoutConfirm = true }) {
-                    Text("退出登录")
-                        .font(.system(size: 14))
-                        .foregroundColor(.red)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(16)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
             }
 
             // 登录按钮
