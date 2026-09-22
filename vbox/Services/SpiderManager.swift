@@ -70,6 +70,8 @@ class SpiderManager: ObservableObject {
     private var cloudPlayCache: [String: (links: [(url: String, name: String)], siteName: String, expiresAt: Date)] = [:]
     /// 初始化任务句柄，确保多次调用 initialize() 时等待首次初始化完成
     private var initializationTask: Task<Void, Never>?
+    /// 重载串行化标记：避免 reloadAllSources() 被多处并发调用时对 engines/allSites 的穿插写
+    private var isReloadingSources = false
     
     /// 获取指定 key 的引擎类型
     func engineType(forKey key: String) -> SpiderEngineType? {
@@ -469,6 +471,13 @@ globalThis.__JS_SPIDER__ = _spider;
     ///        已删除磁盘上的 .py 文件或引擎状态异常, 导致 Python 资源无法使用
     /// 修复: reloadAllSources 时先清除所有 Python 引擎, 强制重新下载和加载
     func reloadAllSources() async {
+        // 可重入守卫：若已有一次重载在进行中（在 @MainActor 上 check-then-set 原子），
+        // 直接返回，由进行中的那次完成重建，避免并发重载对 engines/allSites 交替写
+        // 造成"有时只加载出一部分资源"的竞态。
+        if isReloadingSources { return }
+        isReloadingSources = true
+        defer { isReloadingSources = false }
+
         isLoading = true
         errorMessage = nil
 

@@ -95,6 +95,14 @@ final class RemoteSourceConfigManager: ObservableObject {
             return
         }
 
+        // 地址留空 → 按"关闭同步"处理：只加载已有缓存，不再发起必然失败的联网请求。
+        // 消除每次启动一次无效网络同步造成的就绪不定时（偶发的"只有网盘/源不齐"）。
+        if defaultManifestURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            loadCachedManifestState()
+            print("[RemoteSource] 远程源地址留空，跳过网络同步，仅使用缓存")
+            return
+        }
+
         // 方案四：App 升级后强制刷新
         if appVersionChanged() {
             print("[RemoteSource] App 版本变化，强制刷新")
@@ -136,6 +144,13 @@ final class RemoteSourceConfigManager: ObservableObject {
     func syncNow() async {
         guard remoteDefaultSourceEnabled else {
             loadCachedManifestState()
+            return
+        }
+
+        // 地址留空 → 直接使用缓存，不发起必然失败的网络同步
+        if defaultManifestURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            loadCachedManifestState()
+            print("[RemoteSource] 远程源地址留空，syncNow 跳过网络同步，仅使用缓存")
             return
         }
 
