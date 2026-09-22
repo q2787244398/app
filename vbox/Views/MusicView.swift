@@ -70,6 +70,10 @@ struct MusicView: View {
             .toolbarBackground(.visible, for: .navigationBar)
         }
         .navigationViewStyle(.stack)
+        // 在网络音乐页底部同样悬浮音乐条，便于跨页连续控制
+        .overlay(alignment: .bottom) {
+            MiniPlayerBar()
+        }
         .task {
             await viewModel.loadSources()
             if let first = viewModel.musicSources.first {

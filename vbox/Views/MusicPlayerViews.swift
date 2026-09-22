@@ -31,7 +31,7 @@ struct MiniPlayerBar: View {
     private let expandedHeight: CGFloat = 60   // 展开态高度
     private let collapsedHeight: CGFloat = 52  // 折叠态高度
     private let horizontalMargin: CGFloat = 12 // 左右留白
-    private let bottomMargin: CGFloat = 30     // 底部基准留白
+    private let bottomMargin: CGFloat = 66     // 底部基准留白（抬升到悬浮 tab 栏之上）
     private let topReserve: CGFloat = 100      // 顶部安全余量（状态栏等）
 
     var body: some View {
@@ -151,9 +151,9 @@ struct MiniPlayerBar: View {
                 .frame(width: isCollapsed ? collapsedWidth : barWidth, height: barHeight, alignment: .leading)
                 .opacity(isDragging ? 0.95 : 1.0)
                 // 自由定位：坐标原点在容器左上角。
-                // x 展开时贴右留 12，折叠时贴左留 12；y 以底部为基准，向上随 positionY 自由移动。
+                // x 展开时水平居中，折叠时贴左留 12；y 以底部为基准，向上随 positionY 自由移动。
                 .offset(
-                    x: (isCollapsed ? horizontalMargin : w - barWidth - horizontalMargin),
+                    x: (isCollapsed ? horizontalMargin : (w - barWidth) / 2),
                     y: baseBottom - liveUp
                 )
                 .highPriorityGesture(
@@ -254,6 +254,7 @@ struct MusicPlayerFullView: View {
     @StateObject private var settings = AppSettings()
     @State private var seekValue: Double = 0
     @State private var isSeeking: Bool = false
+    @State private var showQueue: Bool = false
 
     private var accentColor: Color {
         if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
@@ -282,8 +283,10 @@ struct MusicPlayerFullView: View {
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 17, weight: .bold))
                             .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(Color.black.opacity(0.35)))
                     }
                     Spacer()
                     Text("正在播放")
@@ -403,7 +406,7 @@ struct MusicPlayerFullView: View {
                 .padding(.top, 16)
 
                 // 队列按钮
-                Button(action: { /* 队列列表 */ }) {
+                Button(action: { showQueue = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "list.bullet")
                             .font(.system(size: 12))
@@ -417,6 +420,9 @@ struct MusicPlayerFullView: View {
                 Spacer(minLength: 20)
             }
         }
+        .sheet(isPresented: $showQueue) {
+            MusicQueueSheet()
+        }
     }
 
     private func formatTime(_ seconds: Double) -> String {
@@ -424,5 +430,91 @@ struct MusicPlayerFullView: View {
         let m = Int(seconds) / 60
         let s = Int(seconds) % 60
         return String(format: "%02d:%02d", m, s)
+    }
+}
+
+// MARK: - 播放队列弹窗
+
+struct MusicQueueSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var player = AudioPlayerManager.shared
+    @StateObject private var settings = AppSettings()
+
+    private var accentColor: Color {
+        if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
+        if settings.usesFrostedSkin { return Color(hex: "7C3AED") }
+        return Color(hex: "E11D48")
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(player.queue.indices, id: \.self) { index in
+                    let item = player.queue[index]
+                    let isCurrent = (index == player.currentIndex)
+                    HStack(spacing: 12) {
+                            Group {
+                                if let url = URL(string: item.coverURL) {
+                                    AsyncImage(url: url) { image in
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } placeholder: {
+                                        Rectangle().fill(Color(.systemGray5))
+                                            .overlay(Image(systemName: "music.note").foregroundColor(.secondary))
+                                    }
+                                } else {
+                                    Rectangle().fill(Color(.systemGray5))
+                                        .overlay(Image(systemName: "music.note").foregroundColor(.secondary))
+                                }
+                            }
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.name)
+                                    .font(.system(size: 15, weight: isCurrent ? .semibold : .regular))
+                                    .foregroundColor(isCurrent ? accentColor : .primary)
+                                    .lineLimit(1)
+                                Text(item.artist)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            if isCurrent {
+                                Image(systemName: "speaker.wave.2.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(accentColor)
+                            } else {
+                                Button {
+                                    player.removeFromQueue(at: index)
+                                } label: {
+                                    Image(systemName: "minus.circle")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(.red.opacity(0.8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                            .onTapGesture { player.playQueue(player.queue, startIndex: index) }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("播放队列 (\(player.queue.count))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 }
