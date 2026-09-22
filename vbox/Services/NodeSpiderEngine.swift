@@ -578,4 +578,66 @@ final class LXBridgeEngine: SpiderEngineProtocol {
     }
 }
 
+// MARK: - 真实热歌榜（P1-A8）
+
+/// Swift 原生直连网易云「热歌榜」音源。
+///
+/// 背景：聚合源（刀源/念心）的热歌榜此前只是在硬编码热搜词上跑 search，而刀源的
+/// 部分后端（CHKSZ 网易 404 / 咪咕 502）已失效、且 tx/kg 平台根本不支持搜索，导致
+/// 首页榜单经常整页空白。这里改由 iOS 直接请求网易云官方热歌榜（播放仍走 lx musicUrl
+/// 解析链路，刀源 wy 有 oiapi Music_163 兜底可正常返回直链），从而让刀源/念心首页
+/// 稳定展示真实热歌榜，且不依赖远程下发的插件 JS。
+enum MusicHotChart {
+    /// 网易云「热歌榜」歌单 id
+    private static let neteaseHotPlaylistId = "3778678"
+
+    /// 拉取网易云热歌榜，转换为 lx 风格的 VodItem 列表（musicPlatform = wy）。
+    /// 非网易平台或接口失效时返回空数组，由调用方回退热词搜索。
+    static func neteaseHot(limit: Int = 30, pluginKey: String) async -> [VodItem] {
+        guard let url = URL(string: "https://music.163.com/api/playlist/detail?id=\(neteaseHotPlaylistId)") else { return [] }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 12
+        req.setValue("os=pc", forHTTPHeaderField: "Cookie")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+        req.setValue("https://music.163.com/", forHTTPHeaderField: "Referer")
+
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
+
+        let pl = (obj["result"] as? [String: Any]) ?? (obj["playlist"] as? [String: Any])
+        let tracks = (pl?["tracks"] as? [[String: Any]]) ?? []
+        var out: [VodItem] = []
+        for t in tracks.prefix(limit) {
+            let id = String(t["id"] as? Int ?? 0)
+            if id == "0" { continue }
+            let name = (t["name"] as? String) ?? ""
+            let artists = ((t["artists"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+            let singer = artists.joined(separator: ", ")
+            let album = ((t["album"] as? [String: Any])?["name"] as? String) ?? ""
+            let pic = ((t["album"] as? [String: Any])?["picUrl"] as? String) ?? ""
+            let durationMs = (t["duration"] as? Int) ?? 0
+
+            // 组装 lx musicInfo：网易云直接以数字 id 解析（刀源 wy 链路 oiapi Music_163 可解析）
+            let meta: [String: Any] = ["wy": ["id": id, "url_id": id, "lyric_id": id]]
+            let mi: [String: Any] = ["id": id, "name": name, "singer": singer,
+                                     "albumName": album, "meta": meta]
+            let lxRaw = (try? JSONSerialization.data(withJSONObject: mi))
+                .flatMap { String(data: $0, encoding: .utf8) }
+
+            var remarks = "wy"
+            if !singer.isEmpty { remarks = "wy\t\(singer)" }
+
+            out.append(VodItem(
+                vodId: id, vodName: name, vodPic: pic, vodRemarks: remarks,
+                vodPlayFrom: pluginKey, vodPlayUrl: nil, customHeaders: nil,
+                engineKey: pluginKey,
+                metaDuration: durationMs > 1000 ? durationMs / 1000 : nil,
+                albumName: album, availQualities: ["128k", "320k"],
+                musicPlatform: "wy", lxMusicInfo: lxRaw
+            ))
+        }
+        return out
+    }
+}
+
 

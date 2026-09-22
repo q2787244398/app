@@ -622,8 +622,18 @@ final class MusicViewModel: ObservableObject {
     // MARK: - 聚合源：热搜/热歌榜兜底
 
     func loadHotBoard(source: SourceDisplayItem) async {
-        if currentHotKeyword.isEmpty { currentHotKeyword = hotKeywords.first ?? "热歌" }
+        // P1-A8：优先拉取真实热歌榜（Swift 直连网易云），刀源/念心首页稳定出歌。
         songs = []
+        let hot = await SpiderManager.shared.fetchHotBoard(
+            source: source, platform: selectedPlatform
+        )
+        if !hot.isEmpty {
+            songs = hot
+            hasMore = false
+            return
+        }
+        // 非网易云平台 / 热榜接口失效 → 回退热词搜索
+        if currentHotKeyword.isEmpty { currentHotKeyword = hotKeywords.first ?? "热歌" }
         let items = await SpiderManager.shared.searchInMusicSource(
             source: source,
             keyword: currentHotKeyword,

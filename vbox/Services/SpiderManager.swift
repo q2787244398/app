@@ -5530,6 +5530,18 @@ globalThis.__JS_SPIDER__ = _spider;
         return engine is LXBridgeEngine
     }
 
+    /// 取聚合源（刀源/念心）的真实热歌榜。
+    /// 「全部」或「网易云(wy)」→ Swift 直连网易云热歌榜（最稳，不依赖易失效的第三方搜索）；
+    /// 其余平台暂无独立榜单 → 返回空数组，由 ViewModel 回退热词搜索。
+    func fetchHotBoard(source: SourceDisplayItem, platform: String? = nil, limit: Int = 30) async -> [VodItem] {
+        guard isLXMusicSource(source), let key = source.engineKey else { return [] }
+        await waitForNodeReadyIfNeeded()
+        guard platform == nil || platform == "wy" else { return [] }
+        let hot = await MusicHotChart.neteaseHot(limit: limit, pluginKey: key)
+        if !hot.isEmpty { return hot }
+        return []
+    }
+
     /// 拉取 lx 源的平台信息（刷新元数据后返回 `(key, 中文名)` 列表）
     func lxPlatforms(for source: SourceDisplayItem) async -> [(key: String, name: String)] {
         guard isLXMusicSource(source), let key = source.engineKey,
