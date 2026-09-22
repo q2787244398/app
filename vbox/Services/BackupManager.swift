@@ -609,10 +609,15 @@ final class BackupManager {
         // 探测远程源最新版本（挂起等待，不阻塞主线程，避免还原期间 UI 卡死）
         let latest: String? = await mgr.probeLatestConfigVersion()
 
-        // 检测到远程源已有更新版本 → 跳过还原旧缓存（App 会自动拉取最新配置）
+        // 检测到远程源已有更新版本 → 仅提示，不再中断还原。
+        // 修复 (2026-09-22): 旧实现 `snapshot.version != latest` 直接 return nil，
+        // 会把整个远程源类目丢弃。但还原的备份版本必然旧于远端（例如功能新增后
+        // 配置升版），导致 JS 视频源、音乐源等备份数据永远无法被还原出来。
+        // 用户显式选择还原"远程源"类目，意图就是启用并展示备份数据；备份写回后
+        // App 会在下一次同步周期（manifest forceRefresh / TTL）自动拉取最新配置，
+        // 因此版本较旧不应阻断还原，仅记录日志供排查。
         if let latest, !latest.isEmpty, snapshot.version != latest {
-            print("[BackupManager] 远程源检测到新版本 \(latest)（备份为 \(snapshot.version)），跳过还原旧缓存")
-            return nil
+            AppLogStore.shared.info(.spider, "[BackupManager] 远端远程源已有更新版本 \(latest)（备份为 \(snapshot.version)），仍按用户意图还原备份，下次同步自动拉取最新配置")
         }
 
         // 写入备份的缓存配置
