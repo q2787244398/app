@@ -778,6 +778,38 @@ struct PlaylistDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 headerView(detail)
+                // #2：整单“播放全部”并发解析进度反馈
+                if viewModel.isResolvingPlaylist {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        if viewModel.playlistResolveProgress > 0 {
+                            Text("正在解析歌曲地址 \(viewModel.playlistResolveProgress)/\(max(detail.songCount, 1))…")
+                                .font(.system(size: 11))
+                        } else {
+                            Text("正在解析首播地址…")
+                                .font(.system(size: 11))
+                        }
+                        Spacer()
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 2)
+                }
+                // #4：固定源播放跨平台歌单提示，引导切到聚合源
+                if !viewModel.isSelectedSourceAggregator {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                        Text("当前播放源为固定源，跨平台歌单可能无法解析，建议切换刀源/念心")
+                            .font(.system(size: 11))
+                            .lineLimit(2)
+                        Spacer()
+                    }
+                    .foregroundColor(.orange)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                    .padding(.horizontal, 16)
+                }
                 playAllBar(detail)
                 if detail.songs.isEmpty {
                     VStack(spacing: 10) {
@@ -1176,6 +1208,16 @@ final class MusicViewModel: ObservableObject {
     @Published var currentPlaylistPage: Int = 1
     @Published var hasMorePlaylists: Bool = true
 
+    // 整单“播放全部”解析进度（#2：并发预解析时展示，避免无反馈）
+    @Published var isResolvingPlaylist: Bool = false
+    @Published var playlistResolveProgress: Int = 0
+
+    /// 当前播放源是否 lx 聚合源（决定跨平台歌单播放可用性 / 提示）
+    var isSelectedSourceAggregator: Bool {
+        let key = selectedSource?.engineKey ?? ""
+        return !key.isEmpty && LXBridgeEngine.lxKeyMap[key] != nil
+    }
+
     /// 内置热搜关键词（搜索栏空态兜底，点选即搜）
     static let hotKeywords: [String] = [
         "晴天", "稻香", "孤勇者", "罗刹海市",
@@ -1313,43 +1355,10 @@ final class MusicViewModel: ObservableObject {
 
     // MARK: - 播放：歌单内单曲
 
-    /// 将 PlaylistSong 转为 VodItem，用选中源解析播放地址后播放
-    func playPlaylistSong(_ song: PlaylistSong) async {
-        guard let source = selectedSource else { return }
-
-        var vodItem = VodItem(
-            vodId: song.id,
-            vodName: song.name,
-            vodPic: song.coverURL ?? "",
-            engineKey: source.engineKey,
-            musicPlatform: song.platform,
-            lxMusicInfo: song.rawInfo
-        )
-
-        let (playUrl, _) = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: vodItem)
-        guard let url = playUrl, !url.isEmpty else {
-            print("[MusicView] 解析播放地址失败: \(song.name)")
-            return
-        }
-
-        let queueItem = MusicQueueItem(
-            from: vodItem,
-            sourceName: source.name,
-            engineKey: source.engineKey ?? "",
-            playURL: url
-        )
-        AudioPlayerManager.shared.play(item: queueItem)
-    }
-
-    // MARK: - 播放：歌单全部歌曲
-
-    /// 解析歌单内全部歌曲并整批入队播放；首首解析成功即开播，余下继续解析并追加队列
-    func playPlaylistDetail(_ detail: PlaylistDetail) async {
-        guard let source = selectedSource, !detail.songs.isEmpty else { return }
-
-        var started = false
-        for song in detail.songs {
-            let vodItem = VodItem(
+    /// 将歌曲归属平台+当前源解析播放地址；固定源跨平台失败时自动回退到 lx 聚合源（#3）
+    private func resolvePlayFor(_ song: PlaylistSong) async -> MusicQueueItem? {
+        for source in resolutionCandidates(for: song) {
+            var vodItem = VodItem(
                 vodId: song.id,
                 vodName: song.name,
                 vodPic: song.coverURL ?? "",
@@ -1357,30 +1366,101 @@ final class MusicViewModel: ObservableObject {
                 musicPlatform: song.platform,
                 lxMusicInfo: song.rawInfo
             )
-
             let (playUrl, _) = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: vodItem)
-            guard let url = playUrl, !url.isEmpty else { continue }
-
-            let item = MusicQueueItem(
-                from: vodItem,
-                sourceName: source.name,
-                engineKey: source.engineKey ?? "",
-                playURL: url
-            )
-
-            if !started {
-                // 首首解析成功 → 立即开播（play 会将其加入队列并设为当前）
-                started = true
-                AudioPlayerManager.shared.play(item: item)
-            } else {
-                // 后续解析成功的歌曲追加进播放队列
-                AudioPlayerManager.shared.queue.append(item)
+            if let url = playUrl, !url.isEmpty {
+                return MusicQueueItem(
+                    from: vodItem,
+                    sourceName: source.name,
+                    engineKey: source.engineKey ?? "",
+                    playURL: url
+                )
             }
         }
+        return nil
+    }
 
-        // 兜底：若全部解析失败则无操作；否则已开播或已入队
-        if !started {
-            print("[MusicView] 歌单全部歌曲解析失败: \(detail.name)")
+    /// 依歌曲归属平台排列候选播放源：聚合源优先，固定源兜底最后（避免固定源吃不住跨平台 id 就失败）
+    private func resolutionCandidates(for song: PlaylistSong) -> [SourceDisplayItem] {
+        let aggregates = musicSources.filter { LXBridgeEngine.lxKeyMap[$0.engineKey ?? ""] != nil }
+        var ordered: [SourceDisplayItem] = []
+        if let sel = selectedSource {
+            let selIsAgg = LXBridgeEngine.lxKeyMap[sel.engineKey ?? ""] != nil
+            // 当前源是聚合源，或歌曲无归属平台（可当通用源）→ 优先当前源
+            if selIsAgg || song.platform.isEmpty {
+                ordered.append(sel)
+            }
+        }
+        for a in aggregates where !ordered.contains(where: { $0.id == a.id }) { ordered.append(a) }
+        if let sel = selectedSource, !ordered.contains(where: { $0.id == sel.id }) {
+            ordered.append(sel)   // 固定源放最后兜底
+        }
+        return ordered
+    }
+
+    /// 播放歌单内单曲（含跨平台回退）
+    func playPlaylistSong(_ song: PlaylistSong) async {
+        guard song.id != "noSource" else { return }
+        guard let item = await resolvePlayFor(song) else {
+            AudioPlayerManager.shared.playbackNotice = "未能解析播放地址，请切换到刀源/念心"
+            return
+        }
+        AudioPlayerManager.shared.play(item: item)
+    }
+
+    // MARK: - 播放：歌单全部歌曲
+
+    /// 并发预解析整单（#2）：先并发解析前 4 首尽快开播，其余分批并发追加，全程给进度反馈
+    func playPlaylistDetail(_ detail: PlaylistDetail) async {
+        guard !detail.songs.isEmpty else { return }
+        let total = detail.songs.count
+        isResolvingPlaylist = true
+        playlistResolveProgress = 0
+        defer {
+            isResolvingPlaylist = false
+            playlistResolveProgress = 0
+        }
+
+        // 阶段一：并发解析前 4 首，尽快出声
+        let headCount = min(4, total)
+        let head = Array(detail.songs.prefix(headCount))
+        let headDict = await resolveBatch(head)
+        let headResolved = head.indices.compactMap { headDict[$0] ?? nil }
+
+        if let first = headResolved.first {
+            AudioPlayerManager.shared.play(item: first)
+        }
+        for extra in headResolved.dropFirst() { AudioPlayerManager.shared.addToQueue(extra) }
+        playlistResolveProgress = headCount
+
+        if headResolved.isEmpty {
+            AudioPlayerManager.shared.playbackNotice = "未能解析播放地址，请切换到刀源/念心"
+        }
+
+        // 阶段二：剩余并发解析，分批追加并刷新进度
+        guard headCount < total else { return }
+        let rest = Array(detail.songs.dropFirst(headCount))
+        var idx = 0
+        while idx < rest.count {
+            let c = min(4, rest.count - idx)
+            let batch = Array(rest[idx..<idx + c])
+            let dict = await resolveBatch(batch)
+            for item in batch.indices.compactMap({ dict[$0] ?? nil }) {
+                AudioPlayerManager.shared.addToQueue(item)
+            }
+            idx += c
+            playlistResolveProgress = min(total, headCount + idx)
+        }
+    }
+
+    /// 并发解析一批歌单歌曲（同批 4 首并发出网，结果按原顺序返回）
+    private func resolveBatch(_ songs: [PlaylistSong]) async -> [Int: MusicQueueItem?] {
+        await withTaskGroup(of: (Int, MusicQueueItem?).self, returning: [Int: MusicQueueItem?].self) { group in
+            for (i, s) in songs.enumerated() {
+                group.addTask { (i, await self.resolvePlayFor(s)) }
+            }
+            var dict: [Int: MusicQueueItem?] = [:]
+            for await (i, item) in group { dict[i] = item }
+            return dict
         }
     }
 }

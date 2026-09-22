@@ -265,6 +265,8 @@ struct MusicPlayerFullView: View {
     @State private var isLyricLoading = false
     // P3-C1：音质切换中状态
     @State private var isSwitchingQuality = false
+    // 歌词/封面切换：true 时歌词主导（大区滚动歌词），false 时封面主导 + 下方小歌词
+    @State private var showLyrics = false
 
     private var accentColor: Color {
         if settings.usesLiquidSkin { return Color(hex: "38BDF8") }
@@ -339,34 +341,43 @@ struct MusicPlayerFullView: View {
 
                 Spacer()
 
-                // 封面
-                if let song = player.currentSong, let url = URL(string: song.coverURL) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fit)
-                    } placeholder: {
+                // 歌词主导 / 封面主导切换
+                if showLyrics {
+                    if lyricLines.isEmpty {
+                        emptyLyricHint
+                    } else {
+                        lyricList(height: 360, idPrefix: "lyr_main")
+                    }
+                } else {
+                    if let song = player.currentSong, let url = URL(string: song.coverURL) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fit)
+                        } placeholder: {
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color(.systemGray4))
+                                .overlay(
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: 50))
+                                        .foregroundColor(.white.opacity(0.5))
+                                )
+                        }
+                        .frame(width: 260, height: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                    } else {
                         RoundedRectangle(cornerRadius: 16)
                             .fill(Color(.systemGray4))
+                            .frame(width: 260, height: 260)
                             .overlay(
                                 Image(systemName: "music.note")
                                     .font(.system(size: 50))
                                     .foregroundColor(.white.opacity(0.5))
                             )
                     }
-                    .frame(width: 260, height: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-                } else {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color(.systemGray4))
-                        .frame(width: 260, height: 260)
-                        .overlay(
-                            Image(systemName: "music.note")
-                                .font(.system(size: 50))
-                                .foregroundColor(.white.opacity(0.5))
-                        )
                 }
-
-                Spacer()
+                if !showLyrics {
+                    Spacer()
+                }
 
                 // 歌名 + 来源
                 VStack(spacing: 4) {
@@ -436,26 +447,55 @@ struct MusicPlayerFullView: View {
                 }
                 .padding(.top, 16)
 
-                // 队列按钮
-                Button(action: { showQueue = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 12))
-                        Text("播放队列 (\(player.queue.count))")
-                            .font(.system(size: 12))
+                // 队列按钮 + 歌词/封面切换
+                HStack(spacing: 24) {
+                    Button(action: { showQueue = true }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: 12))
+                            Text("播放队列 (\(player.queue.count))")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(.white.opacity(0.7))
                     }
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.top, 12)
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) { showLyrics.toggle() }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: showLyrics ? "photo" : "text.quote")
+                                .font(.system(size: 12))
+                            Text(showLyrics ? "封面" : "歌词")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(showLyrics ? accentColor : .white.opacity(0.7))
+                    }
                 }
+                .padding(.top, 12)
 
                 // P3-C1：音质切换（仅 lx 源且插件声明多档音质时显示）
                 qualitySwitchBar
 
-                // P3-C2：歌词区（仅 lx 完整型插件取到歌词时显示，否则整区隐藏）
-                lyricSection
+                // P3-C2：歌词区（歌词主导模式下已在上方大区显示，此处隐藏避免重复）
+                if !showLyrics {
+                    lyricSection
+                }
 
                 Spacer(minLength: 20)
             }
+        }
+        // 播放失败/切换提示横幅（自动消失）
+        .overlay(alignment: .top) {
+            if let notice = player.playbackNotice {
+                PlaybackNoticeBanner(text: notice, accentColor: accentColor)
+                    .padding(.top, 46)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        // 提示自动清除
+        .task(id: player.playbackNotice) {
+            guard player.playbackNotice != nil else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if player.playbackNotice != nil { player.playbackNotice = nil }
         }
         .sheet(isPresented: $showQueue) {
             MusicQueueSheet()
@@ -489,7 +529,9 @@ struct MusicPlayerFullView: View {
         isLyricLoading = true
         let engine = LXBridgeEngine(siteKey: song.engineKey)
         Task { @MainActor in
-            let raw = await engine.fetchLyricForSong(id: song.id)
+            // 歌词按歌曲归属平台定向取（优先命中缓存），避免聚合源全平台逐源轮询
+            let raw = await engine.fetchLyricForSong(id: song.id,
+                                                     preferSources: song.musicPlatform.flatMap { [$0] })
             lyricLines = Self.parseLRC(raw)
             isLyricLoading = false
         }
@@ -582,42 +624,60 @@ extension MusicPlayerFullView {
             .frame(height: 90)
             .frame(maxWidth: .infinity)
         } else if !lyricLines.isEmpty {
-            ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 6) {
-                        ForEach(Array(lyricLines.enumerated()), id: \.offset) { i, pair in
-                            Text(pair.1)
-                                .font(.system(size: 14))
-                                .foregroundColor(i == activeLyricIndex ? accentColor : .white.opacity(0.55))
-                                .fontWeight(i == activeLyricIndex ? .bold : .regular)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity)
-                                .id(i)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-                .frame(height: 200)
-                .overlay(alignment: .bottom) {
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.35)],
-                        startPoint: .center, endPoint: .bottom
-                    )
-                    .frame(height: 24)
-                    .allowsHitTesting(false)
-                }
-                .onChange(of: activeLyricIndex) { newIndex in
-                    if newIndex >= 0 {
-                        withAnimation(.linear(duration: 0.2)) {
-                            proxy.scrollTo(newIndex, anchor: .center)
-                        }
-                    }
-                }
-            }
-            .padding(.top, 12)
+            lyricList(height: 200, idPrefix: "lyr_mini")
+                .padding(.top, 12)
         } else {
             // 无歌词（念心等）：整区隐藏
             EmptyView()
+        }
+    }
+
+    /// 无歌词（念心/固定源）时歌词主导模式的提示
+    private var emptyLyricHint: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "text.quote")
+                .font(.system(size: 40))
+                .foregroundColor(.white.opacity(0.35))
+            Text("该来源暂无歌词")
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.6))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// 供封面主导（迷你区）/ 歌词主导（大区）复用的滚动歌词
+    private func lyricList(height: CGFloat, idPrefix: String) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 6) {
+                    ForEach(Array(lyricLines.enumerated()), id: \.offset) { i, pair in
+                        Text(pair.1)
+                            .font(.system(size: height > 250 ? 17 : 14))
+                            .foregroundColor(i == activeLyricIndex ? accentColor : .white.opacity(0.55))
+                            .fontWeight(i == activeLyricIndex ? .bold : .regular)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .id(idPrefix + "_\(i)")
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .frame(height: height)
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.35)],
+                    startPoint: .center, endPoint: .bottom
+                )
+                .frame(height: 24)
+                .allowsHitTesting(false)
+            }
+            .onChange(of: activeLyricIndex) { newIndex in
+                if newIndex >= 0 {
+                    withAnimation(.linear(duration: 0.2)) {
+                        proxy.scrollTo(idPrefix + "_\(newIndex)", anchor: .center)
+                    }
+                }
+            }
         }
     }
 
@@ -631,6 +691,30 @@ extension MusicPlayerFullView {
         let m = Int(seconds) / 60
         let s = Int(seconds) % 60
         return String(format: "%02d:%02d", m, s)
+    }
+}
+
+// MARK: - 播放提示横幅
+
+struct PlaybackNoticeBanner: View {
+    let text: String
+    let accentColor: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+            Text(text)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(2)
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(
+            Capsule().fill(Color.black.opacity(0.78))
+        )
+        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 2)
     }
 }
 

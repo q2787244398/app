@@ -291,6 +291,8 @@ final class LXBridgeEngine: SpiderEngineProtocol {
     let pluginKey: String
     /// 每个插件声明的平台源能力（source -> {name, actions, qualitys,...}），list 时拉取
     private var sourcesMeta: [String: [String: Any]] = [:]
+    /// 歌词内存缓存（key = "source:id"），避免切歌/重开全屏页反复走 JS 桥接
+    private var lyricCache: [String: String] = [:]
 
     /// 已知 lx 音乐源 key → 插件 key 白名单（P1-A2：白名单式识别，防误判）
     static let lxKeyMap: [String: String] = [
@@ -552,14 +554,16 @@ final class LXBridgeEngine: SpiderEngineProtocol {
     // MARK: - 歌词（C2，仅完整型插件提供）
 
     func fetchLyric(id: String, source: String) async throws -> String {
+        let cacheKey = "\(source):\(id)"
+        if let cached = lyricCache[cacheKey] { return cached }
         let (obj, result) = try await bridgeCall("lyric", ["source": source, "id": id])
         try ensureOk(obj)
-        if let str = result as? String, !str.isEmpty { return str }
+        if let str = result as? String, !str.isEmpty { lyricCache[cacheKey] = str; return str }
         if let dict = result as? [String: Any] {
-            if let lrc = dict["lrc"] as? String, !lrc.isEmpty { return lrc }
-            if let lyric = dict["lyric"] as? String, !lyric.isEmpty { return lyric }
+            if let lrc = dict["lrc"] as? String, !lrc.isEmpty { lyricCache[cacheKey] = lrc; return lrc }
+            if let lyric = dict["lyric"] as? String, !lyric.isEmpty { lyricCache[cacheKey] = lyric; return lyric }
             if let arr = result as? [Any], let first = arr.first as? [String: Any] {
-                if let lrc = first["lrc"] as? String, !lrc.isEmpty { return lrc }
+                if let lrc = first["lrc"] as? String, !lrc.isEmpty { lyricCache[cacheKey] = lrc; return lrc }
             }
         }
         throw LXBridgeError.bridge("无歌词")

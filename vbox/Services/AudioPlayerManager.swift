@@ -166,6 +166,13 @@ final class AudioPlayerManager: NSObject, ObservableObject {
     @Published var repeatMode: MusicRepeatMode = .sequential
     @Published var showFullPlayer: Bool = false
     @Published var isLoading: Bool = false
+    /// 播放器即时提示（如“播放失败，正在切换下一首”），由全屏页短暂展示后自动清除
+    @Published var playbackNotice: String? = nil
+
+    // 播放失败保护：连续失败 < 队列长度时才自动跳，防止整单全挂死循环
+    private var consecutiveFailures = 0
+    // 是否已针对当前曲目尝试过一次直链重解析（仅 lx 聚合源），切歌时复位
+    private var didReResolveCurrent = false
 
     private override init() {
         super.init()
@@ -206,6 +213,8 @@ final class AudioPlayerManager: NSObject, ObservableObject {
     // MARK: - 播放控制
 
     func play(item: MusicQueueItem) {
+        didReResolveCurrent = false
+        consecutiveFailures = 0
         // 如果队列中没有这首歌，加入队列
         if !queue.contains(where: { $0.id == item.id }) {
             queue.append(item)
@@ -219,6 +228,8 @@ final class AudioPlayerManager: NSObject, ObservableObject {
     }
 
     func playQueue(_ items: [MusicQueueItem], startIndex: Int = 0) {
+        didReResolveCurrent = false
+        consecutiveFailures = 0
         queue = items
         currentIndex = startIndex
         saveQueue()
@@ -265,6 +276,9 @@ final class AudioPlayerManager: NSObject, ObservableObject {
                 if item.status == .readyToPlay {
                     self.duration = item.duration.seconds > 0 ? item.duration.seconds : 0
                     self.isLoading = false
+                    // 成功开播：复位失败计数，一首歌只重解析一次
+                    self.consecutiveFailures = 0
+                    self.didReResolveCurrent = false
                     // P3-C1：音质切换时保留原进度（±3s 内），否则从头播放
                     if let t = initialTime, t > 0 {
                         self.player?.seek(to: CMTime(seconds: t, preferredTimescale: 600),
@@ -276,7 +290,21 @@ final class AudioPlayerManager: NSObject, ObservableObject {
                 } else if item.status == .failed {
                     self.isLoading = false
                     self.isPlaying = false
+                    self.playbackNotice = "播放失败，正在切换下一首"
                     print("[AudioPlayer] 播放失败: \(item.error?.localizedDescription ?? "")")
+                    // #6：lx 聚合源直链常有过期/失效，先按归属平台重解析一次当前曲目
+                    let isAggregator = LXBridgeEngine.lxKeyMap[item.engineKey] != nil
+                    if isAggregator && !self.didReResolveCurrent {
+                        self.reResolveCurrent()
+                        return
+                    }
+                    // #1：其余情况自动跳到下一首（连续失败保护，避免整单全坏死循环）
+                    self.consecutiveFailures += 1
+                    if self.consecutiveFailures < self.queue.count && self.queue.count > 1 {
+                        self.playNext()
+                    } else {
+                        self.consecutiveFailures = 0
+                    }
                 }
             }
         }
@@ -391,6 +419,40 @@ final class AudioPlayerManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - 直链失败重解析（#6，仅 lx 聚合源直链过期/失效时使用）
+
+    /// 当前曲目播放失败时，按归属平台 + 原始 musicInfo 重新解析直链；成功则重播当前曲目，
+    /// 失败则交由调用方（failed 分支）自动跳到下一首。每首曲目至多重解析一次，避免死循环。
+    private func reResolveCurrent() {
+        guard queue.indices.contains(currentIndex) else { playNext(); return }
+        let item = queue[currentIndex]
+        guard LXBridgeEngine.lxKeyMap[item.engineKey] != nil else { playNext(); return }
+        let engine = LXBridgeEngine(siteKey: item.engineKey)
+        Task {
+            do {
+                var rawInfo: [String: Any]? = nil
+                if let str = item.lxMusicInfo, let d = str.data(using: .utf8) {
+                    rawInfo = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+                }
+                let prefer: [String]? = item.musicPlatform.flatMap { [$0] }
+                let url = try await engine.resolvePlayURL(id: item.id, quality: item.quality,
+                                                          preferSources: prefer, musicInfo: rawInfo,
+                                                          name: item.name,
+                                                          singer: rawInfo?["singer"] as? String,
+                                                          albumName: item.albumName)
+                guard !url.isEmpty, queue.indices.contains(currentIndex) else { self.playNext(); return }
+                let rebuilt = MusicQueueItem(copying: queue[currentIndex], playURL: url, quality: item.quality)
+                queue[currentIndex] = rebuilt
+                saveQueue()
+                didReResolveCurrent = true
+                startPlayback(seekTo: 0)
+            } catch {
+                print("[AudioPlayer] 重解析失败，自动跳下一首: \(error)")
+                self.playNext()
+            }
+        }
+    }
+
     func playNext() {
         guard !queue.isEmpty else { return }
         if repeatMode == .single {
@@ -404,6 +466,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
                 currentIndex += 1
                 if currentIndex >= queue.count { currentIndex = 0 }
             }
+            didReResolveCurrent = false
             saveQueue()
             startPlayback()
         }
@@ -411,6 +474,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
 
     func playPrevious() {
         guard !queue.isEmpty else { return }
+        didReResolveCurrent = false
         if currentTime > 3 {
             // 超过 3 秒则从头播放
             seek(to: 0)
