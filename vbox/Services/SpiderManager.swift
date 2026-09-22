@@ -2104,6 +2104,9 @@ globalThis.__JS_SPIDER__ = _spider;
         let fallbackEnabled = self.fallbackEnabled
         let fallbackSites = self.allFallbackSites
         let engines = self.engines
+        // 预构建音乐源 key 集合（主线程上完成），供并发闭包内过滤使用，
+        // 避免在 TaskGroup 非隔离闭包里直接调用 actor 隔离方法 isMusicEngineKey 导致编译错误
+        let musicEngineKeys = Set(engines.keys.filter { isMusicEngineKey($0) })
 
         // 预构建 API 站点列表（在 MainActor 上完成，避免闭包内调用 resolveSiteMode）
         struct Site { let name: String; let api: String }
@@ -2178,8 +2181,8 @@ globalThis.__JS_SPIDER__ = _spider;
                 let engineEntries = Array(engines)
                 guard !engineEntries.isEmpty else { return }
 
-                // ★ Python 引擎已拆到通道4，这里只处理 JS/CMS 引擎
-                let jsEntries = engineEntries.filter { !($1 is PythonSpiderEngine) && !isMusicEngineKey($0) }
+                // ★ Python 引擎已拆到通道4，这里只处理 JS/CMS 引擎（音乐源也不参与视频搜索）
+                let jsEntries = engineEntries.filter { !($1 is PythonSpiderEngine) && !musicEngineKeys.contains($0) }
                 guard !jsEntries.isEmpty else { return }
 
                 await withTaskGroup(of: (key: String, items: [VodItem]?, error: String?).self) { jsGroup in
