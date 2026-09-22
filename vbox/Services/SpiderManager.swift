@@ -727,9 +727,11 @@ globalThis.__JS_SPIDER__ = _spider;
 
             // 加载引擎
             await loadBuiltinEngineIfNeeded()
-            if !spiderSites.isEmpty, let baseURL = remoteSpiderBaseURL() {
+            // JS/Python 蜘蛛优先从本地缓存加载（cache-first），manifest 地址缺失不应阻断加载。
+            // baseURL 仅作为网络下载 fallback：地址留空时传空串，缓存命中即可正常加载。
+            if !spiderSites.isEmpty {
                 AppLogStore.shared.info(.spider, "[SpiderManager] 📋 开始加载远程默认源蜘蛛引擎 (无订阅源模式)")
-                await loadRemoteSpiderEngines(baseURL: baseURL, sites: spiderSites)
+                await loadRemoteSpiderEngines(baseURL: remoteSpiderBaseURL() ?? "", sites: spiderSites)
             }
 
             // ★ 加载完成汇总日志
@@ -809,10 +811,10 @@ globalThis.__JS_SPIDER__ = _spider;
         // 先确保内置蜘蛛加载
         await loadBuiltinEngineIfNeeded()
 
-        // 加载远程默认源 JS 蜘蛛引擎
-        if !spiderSites.isEmpty, let baseURL = remoteSpiderBaseURL() {
+        // 加载远程默认源 JS 蜘蛛引擎（cache-first，manifest 地址缺失不阻断）
+        if !spiderSites.isEmpty {
             print("[SpiderManager] 开始加载远程默认源 JS 蜘蛛引擎 (订阅源模式)")
-            await loadRemoteSpiderEngines(baseURL: baseURL, sites: spiderSites)
+            await loadRemoteSpiderEngines(baseURL: remoteSpiderBaseURL() ?? "", sites: spiderSites)
         }
 
         // 尝试从订阅源的 spider 字段加载全局 JS 蜘蛛
@@ -1313,6 +1315,12 @@ globalThis.__JS_SPIDER__ = _spider;
             if let base = URL(string: baseURL) {
                 return base.appendingPathComponent(cleanPath).standardized.absoluteString
             } else {
+                // baseURL 缺失/无效（通常是远程源地址留空）：
+                // 返回相对路径本身，交由 loadSingleRemoteSpider 优先读本地缓存（cache-first）。
+                // 仅 .js 走缓存；.py 没有缓存加载路径，保持跳过以免发起无效网络请求。
+                if api.hasSuffix(".js") {
+                    return cleanPath
+                }
                 print("[SpiderManager] ⚠️ 远程蜘蛛 baseURL 无效，跳过: \(site.name)")
                 return nil
             }
@@ -1337,7 +1345,7 @@ globalThis.__JS_SPIDER__ = _spider;
             } else {
                 // 缓存不存在，fallback 到网络下载
                 print("[SpiderManager] 🌐 本地缓存不存在，从网络下载: \(site.name) (\(key))")
-                guard let url = URL(string: resolvedURL) else { return false }
+                guard let url = URL(string: resolvedURL), url.scheme != nil, url.host != nil else { return false }
                 var req = URLRequest(url: url)
                 req.timeoutInterval = 15
                 req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
