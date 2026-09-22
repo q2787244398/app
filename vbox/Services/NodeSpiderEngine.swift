@@ -394,6 +394,22 @@ final class LXBridgeEngine: SpiderEngineProtocol {
     }
     private static let defaultSources = ["wy", "tx", "kw", "kg", "mg"]
 
+    /// 平台 key → 中文显示名（供 UI 平台行与歌曲来源 tag 使用）
+    static let platformDisplayNames: [String: String] = [
+        "wy": "网易云", "tx": "腾讯QQ", "qq": "腾讯QQ",
+        "kw": "酷我", "kuwo": "酷我",
+        "kg": "酷狗", "kugou": "酷狗",
+        "mg": "千千", "sy": "千千", "py": "皮皮新闻",
+    ]
+
+    /// 平台 key → 中文显示名（未知 key 原样返回）
+    func platformName(_ key: String) -> String {
+        Self.platformDisplayNames[key] ?? key
+    }
+
+    /// 是否多平台聚合源（刀源/念心等 lx 全平台插件）→ 决定 UI 是否渲染平台行
+    var isAggregator: Bool { supportedSources.count > 1 }
+
     /// 指定平台的可用音质
     func availQualities(for source: String) -> [String] {
         guard let meta = sourcesMeta[source] as? [String: Any],

@@ -5476,8 +5476,8 @@ globalThis.__JS_SPIDER__ = _spider;
         return allItems.filter { $0.category == .music }
     }
 
-    /// 在单个音乐源中搜索
-    func searchInMusicSource(source: SourceDisplayItem, keyword: String, pg: Int = 1) async -> [VodItem] {
+    /// 在单个音乐源中搜索（`platform` 非空时仅搜索该子平台，供聚合源平台行使用）
+    func searchInMusicSource(source: SourceDisplayItem, keyword: String, pg: Int = 1, platform: String? = nil) async -> [VodItem] {
         guard source.category == .music,
               let key = source.engineKey,
               let engine = engines[key] else { return [] }
@@ -5491,8 +5491,9 @@ globalThis.__JS_SPIDER__ = _spider;
                 print("[SpiderManager] musicSearch[\(source.name)] lx 未就绪")
                 return []
             }
+            let sources = platform.flatMap({ [$0] }) ?? lx.supportedSources
             var all: [VodItem] = []
-            for src in lx.supportedSources {
+            for src in sources {
                 guard let found = try? await lx.searchSongs(keyword: keyword, source: src, page: pg) else { continue }
                 for var item in found {
                     item.engineKey = key
@@ -5519,6 +5520,22 @@ globalThis.__JS_SPIDER__ = _spider;
             print("[SpiderManager] musicSearch[\(source.name)] 失败: \(error)")
             return []
         }
+    }
+
+    /// 是否 lx 多平台聚合音乐源（决定 UI 是否渲染平台行 / 热搜兜底）
+    func isLXMusicSource(_ source: SourceDisplayItem) -> Bool {
+        guard source.category == .music,
+              let key = source.engineKey,
+              let engine = engines[key] else { return false }
+        return engine is LXBridgeEngine
+    }
+
+    /// 拉取 lx 源的平台信息（刷新元数据后返回 `(key, 中文名)` 列表）
+    func lxPlatforms(for source: SourceDisplayItem) async -> [(key: String, name: String)] {
+        guard isLXMusicSource(source), let key = source.engineKey,
+              let lx = engines[key] as? LXBridgeEngine else { return [] }
+        await lx.refreshMetadata()
+        return lx.supportedSources.map { ($0, lx.platformName($0)) }
     }
 
     /// 跨所有音乐源搜索（流式回调）

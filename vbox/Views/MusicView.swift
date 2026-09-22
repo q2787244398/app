@@ -39,9 +39,17 @@ struct MusicView: View {
                 } else if selectedSource == nil && viewModel.musicSources.isEmpty {
                     emptyState
                 } else {
+                    // 平台行（仅多平台聚合源，如刀源/念心）
+                    if viewModel.isAggregator && !viewModel.platforms.isEmpty {
+                        platformBar
+                    }
                     // 分类标签 + 歌曲列表
                     if !viewModel.categories.isEmpty {
                         categoryBar
+                    }
+                    // 🔥 热搜兜底（仅聚合源，点选即换爱歌）
+                    if viewModel.isAggregator && viewModel.showHotBoard {
+                        hotKeywordBar
                     }
                     songList
                 }
@@ -146,6 +154,79 @@ struct MusicView: View {
         }
     }
 
+    // MARK: - 平台选择栏（仅多平台聚合源）
+
+    private var platformBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("平台")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.platforms) { p in
+                        let isSelected = (p.isAll && viewModel.selectedPlatform == nil) || (!p.isAll && viewModel.selectedPlatform == p.key)
+                        Button(action: { Task { await viewModel.selectPlatform(p) } }) {
+                            Text(p.name)
+                                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(isSelected ? accentColor.opacity(0.16) : Color(.systemGray6))
+                                .foregroundColor(isSelected ? accentColor : .primary)
+                                .cornerRadius(14)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+            }
+        }
+        .padding(.top, 6)
+    }
+
+    // MARK: - 🔥 热搜栏（聚合源空态/首屏兜底）
+
+    private var hotKeywordBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("🔥 热搜")
+                    .font(.system(size: 14, weight: .bold))
+                Text("点选即换爱歌，无需输入")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.hotKeywords, id: \.self) { kw in
+                        Button(action: {
+                            guard let source = viewModel.currentSourceForHotBoard else { return }
+                            Task { await viewModel.tapHotKeyword(kw, source: source) }
+                        }) {
+                            Text(kw)
+                                .font(.system(size: 12, weight: .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color(.systemGray6))
+                                .foregroundColor(.primary)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                                )
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+            }
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 4)
+    }
+
     // MARK: - 歌曲列表
 
     private var songList: some View {
@@ -164,9 +245,14 @@ struct MusicView: View {
                     Image(systemName: "music.note.list")
                         .font(.system(size: 40))
                         .foregroundColor(.secondary.opacity(0.5))
-                    Text("暂无音乐内容")
+                    Text(viewModel.isAggregator ? "正在为你载入热歌榜…" : "暂无音乐内容")
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
+                    if viewModel.isAggregator {
+                        Text("点上方 🔥 热搜 或输入关键词即可出歌")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary.opacity(0.8))
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -316,6 +402,18 @@ struct MusicRowView: View {
 
                 Spacer()
 
+                // lx 聚合源：歌曲来源平台 tag（从 vodRemarks 首段平台 key 映射中文名）
+                if let tag = platformTag {
+                    Text(tag)
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(tagBG)
+                        .foregroundColor(tagFG)
+                        .cornerRadius(5)
+                        .padding(.trailing, 6)
+                }
+
                 // P2-B2：时长展示（仅 song.metaDuration 存在时显示，无该元数据不显示，不影响 vodRemarks 歌手/来源）
                 if let d = song.metaDuration, d > 0 {
                     Text(Self.formatDuration(d))
@@ -339,6 +437,27 @@ struct MusicRowView: View {
         let h = s / 3600, m = (s % 3600) / 60, sec = s % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, sec) }
         return String(format: "%02d:%02d", m, sec)
+    }
+
+    /// 歌曲来源平台 tag：lx 聚合源的 vodRemarks 形如 "平台key\t歌手名"，取出首段映射中文名；
+    /// 非 lx / 非已知平台返回 nil（不显示 tag，不影响其它源）。
+    private var platformTag: String? {
+        guard let rem = song.vodRemarks,
+              let first = rem.split(separator: "\t", maxSplits: 1).first,
+              !first.isEmpty else { return nil }
+        return LXBridgeEngine.platformDisplayNames[String(first)]
+    }
+
+    private var tagFG: Color { Color.white }
+    private var tagBG: Color {
+        guard let tag = platformTag else { return Color.blue }
+        switch tag {
+        case "网易云": return Color(red: 0.84, green: 0.20, blue: 0.29)   // 网易红
+        case "腾讯QQ": return Color(red: 0.20, green: 0.60, blue: 1.00)  // 腾讯蓝
+        case "酷狗": return Color(red: 0.16, green: 0.72, blue: 0.49)    // 酷狗绿
+        case "酷我": return Color(red: 0.96, green: 0.55, blue: 0.24)    // 酷我橙
+        default: return Color(hex: "7C3AED")
+        }
     }
 }
 
@@ -413,6 +532,18 @@ struct MusicSearchView: View {
     }
 }
 
+// MARK: - 平台模型（聚合源平台行）
+
+struct MusicPlatform: Identifiable, Hashable {
+    let key: String
+    let name: String
+    var id: String { key }
+
+    /// “全部平台”哨兵项
+    static let all = MusicPlatform(key: "__all__", name: "全部")
+    var isAll: Bool { key == "__all__" }
+}
+
 // MARK: - ViewModel
 
 @MainActor
@@ -425,10 +556,29 @@ final class MusicViewModel: ObservableObject {
     @Published var isSearching: Bool = false
     @Published var hasMore: Bool = false
 
+    /// 聚合源（lx 多平台，如刀源/念心）是否处于当前源
+    @Published var isAggregator: Bool = false
+    /// 聚合源的平台列表（首个为“全部”）
+    @Published var platforms: [MusicPlatform] = []
+    /// 当前选中的平台 key；nil = 全部
+    @Published var selectedPlatform: String? = nil
+    /// 是否展示“🔥 热搜”栏
+    @Published var showHotBoard: Bool = false
+
     private var currentPage: Int = 1
     private var currentSource: SourceDisplayItem?
     private var currentTid: String = ""
     private var isSearchMode: Bool = false
+    private var currentHotKeyword: String = ""
+
+    /// 内置热搜关键词（聚合源首屏兜底，点选即搜索）
+    let hotKeywords: [String] = [
+        "晴天", "稻香", "孤勇者", "罗刹海市",
+        "晚风心里吹", "我记得", "起风了", "体面"
+    ]
+
+    /// 供热搜栏获取当前源（VM 内部当前源）
+    var currentSourceForHotBoard: SourceDisplayItem? { currentSource }
 
     // MARK: - 加载源列表
 
@@ -442,20 +592,58 @@ final class MusicViewModel: ObservableObject {
         currentSource = source
         currentPage = 1
         isSearchMode = false
+        isAggregator = SpiderManager.shared.isLXMusicSource(source)
+
+        // 聚合源（刀源/念心等 lx 多平台）：无首页数据流，改为「平台行 + 🔥热搜 热歌榜兜底」
+        if isAggregator {
+            isLoading = true
+            songs = []
+            categories = []
+            let plats = await SpiderManager.shared.lxPlatforms(for: source)
+            var items = [MusicPlatform.all]
+            items.append(contentsOf: plats.map { MusicPlatform(key: $0.key, name: $0.name) })
+            platforms = items
+            selectedPlatform = nil
+            showHotBoard = true
+            await loadHotBoard(source: source)
+            isLoading = false
+            return
+        }
+
         isLoading = true
         songs = []
-
         let home = await SpiderManager.shared.fetchHomeData(for: source)
         isLoading = false
+        categories = home?.categories ?? []
+        songs = home?.recommended ?? []
+        hasMore = !(home?.recommended.isEmpty ?? true)
+    }
 
-        if let home = home {
-            categories = home.categories
-            songs = home.recommended
-            hasMore = !home.recommended.isEmpty
-        } else {
-            categories = []
-            songs = []
-            hasMore = false
+    // MARK: - 聚合源：热搜/热歌榜兜底
+
+    func loadHotBoard(source: SourceDisplayItem) async {
+        if currentHotKeyword.isEmpty { currentHotKeyword = hotKeywords.first ?? "热歌" }
+        songs = []
+        let items = await SpiderManager.shared.searchInMusicSource(
+            source: source,
+            keyword: currentHotKeyword,
+            platform: selectedPlatform
+        )
+        songs = items
+        hasMore = false
+    }
+
+    /// 点击 🔥 热搜词 → 换词并重新加载热歌榜
+    func tapHotKeyword(_ kw: String, source: SourceDisplayItem) async {
+        currentHotKeyword = kw
+        await loadHotBoard(source: source)
+    }
+
+    /// 平台行选择 → 切换到该平台并重载热歌榜
+    func selectPlatform(_ p: MusicPlatform) async {
+        selectedPlatform = p.isAll ? nil : p.key
+        if isAggregator, let source = currentSource {
+            await loadHotBoard(source: source)
         }
     }
 
