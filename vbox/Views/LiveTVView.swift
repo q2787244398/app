@@ -469,8 +469,9 @@ struct LiveTVView: View {
 
             if !parsed.isEmpty {
                 service.addLocalChannels(name: fileName, channels: parsed)
+                // addLocalChannels 内部已按 id 去重追加名为 fileName 的本地源，
+                // 此处不再重复 addCustomSource，否则同一文件会被加入两份。
                 let urlString = "local://\(fileName)"
-                service.addCustomSource(name: fileName, url: urlString)
                 let customSource = LiveSourceType.custom(name: fileName, url: urlString)
                 service.switchSource(to: customSource)
                 // 依赖 onChange(of: service.currentSource) 自动刷新分类和频道
