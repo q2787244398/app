@@ -713,8 +713,8 @@ struct MusicView: View {
                 }
                 var winner: (Int, MusicQueueItem)? = nil
                 for await res in group {
-                    if let res = res {
-                        winner = res
+                    if let res = res, let item = res.item {
+                        winner = (res.index, item)
                         group.cancelAll()
                         break
                     }
@@ -1696,9 +1696,14 @@ final class MusicViewModel: ObservableObject {
                 source: source ?? homeRecommendedSource(home),
                 keyword: cat.typeName, pg: 1)
         }
-        if var updated = sourceHome {
-            updated.recommended = songs
-            sourceHome = updated
+        if let current = sourceHome, !songs.isEmpty {
+            // SourceHomeData 的 recommended 是 let，需重建新实例
+            sourceHome = SourceHomeData(
+                sourceName: current.sourceName,
+                categories: current.categories,
+                recommended: songs,
+                sourceType: current.sourceType
+            )
         }
         log(songs.isEmpty ? .error : .success, "源分类加载", "[\(home.sourceName)/\(cat.typeName)] 返回 \(songs.count) 条")
     }
@@ -1917,8 +1922,8 @@ final class MusicViewModel: ObservableObject {
             }
             var winner: (Int, MusicQueueItem)? = nil
             for await res in group {
-                if let res = res {
-                    winner = res
+                if let res = res, let item = res.item {
+                    winner = (res.index, item)
                     group.cancelAll()
                     break
                 }
