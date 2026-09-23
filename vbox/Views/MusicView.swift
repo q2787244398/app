@@ -810,6 +810,31 @@ struct PlaylistDetailView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
                     .padding(.horizontal, 16)
                 }
+                // 单曲点击播放反馈：解析中 loading / 失败提示（在详情页内直接可见）
+                if viewModel.isResolvingSingleSong {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在解析播放地址…").font(.system(size: 11))
+                        Spacer()
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                } else if let notice = viewModel.singleSongNotice {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                        Text(notice)
+                            .font(.system(size: 11))
+                            .lineLimit(2)
+                        Spacer()
+                    }
+                    .foregroundColor(.red)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.10)))
+                    .padding(.horizontal, 16)
+                    .onTapGesture { viewModel.singleSongNotice = nil }
+                }
                 playAllBar(detail)
                 if detail.songs.isEmpty {
                     VStack(spacing: 10) {
@@ -1211,6 +1236,9 @@ final class MusicViewModel: ObservableObject {
     // 整单“播放全部”解析进度（#2：并发预解析时展示，避免无反馈）
     @Published var isResolvingPlaylist: Bool = false
     @Published var playlistResolveProgress: Int = 0
+    // 单曲点击播放：解析中 loading + 失败提示（在歌单详情页内直接可见，避免“点了没反应”）
+    @Published var isResolvingSingleSong: Bool = false
+    @Published var singleSongNotice: String? = nil
 
     /// 当前播放源是否 lx 聚合源（决定跨平台歌单播放可用性 / 提示）
     var isSelectedSourceAggregator: Bool {
@@ -1400,8 +1428,15 @@ final class MusicViewModel: ObservableObject {
     /// 播放歌单内单曲（含跨平台回退）
     func playPlaylistSong(_ song: PlaylistSong) async {
         guard song.id != "noSource" else { return }
-        guard let item = await resolvePlayFor(song) else {
+        isResolvingSingleSong = true
+        singleSongNotice = nil
+        defer {
+            isResolvingSingleSong = false
+        }
+        let item = await resolvePlayFor(song)
+        guard let item = item else {
             AudioPlayerManager.shared.playbackNotice = "未能解析播放地址，请切换到刀源/念心"
+            singleSongNotice = "未能解析播放地址，请切换到刀源/念心源再试"
             return
         }
         AudioPlayerManager.shared.play(item: item)

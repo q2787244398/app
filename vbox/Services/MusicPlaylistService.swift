@@ -319,15 +319,6 @@ final class MusicPlaylistService {
             }
         }
 
-        if categories.count <= 1 {
-            let fallback = ["全部", "华语", "欧美", "日语", "韩语", "粤语",
-                            "流行", "摇滚", "民谣", "电子", "说唱",
-                            "轻音乐", "爵士", "乡村", "古典", "民族"]
-            for name in fallback {
-                categories.append(PlaylistCategory(id: name, name: name, platform: .netease))
-            }
-        }
-
         return categories
     }
 
@@ -542,15 +533,6 @@ final class MusicPlaylistService {
                         categories.append(PlaylistCategory(id: id, name: name, platform: .qq))
                     }
                 }
-            }
-        }
-
-        if categories.count <= 1 {
-            let fallback = ["全部", "华语", "欧美", "日语", "韩语", "粤语",
-                            "流行", "摇滚", "民谣", "电子", "说唱",
-                            "R&B", "爵士", "乡村", "古典", "轻音乐"]
-            for name in fallback {
-                categories.append(PlaylistCategory(id: name, name: name, platform: .qq))
             }
         }
 
@@ -858,26 +840,41 @@ final class MusicPlaylistService {
     }
 
     private func kugouCategories() async -> [PlaylistCategory] {
-        return [
-            PlaylistCategory(id: "", name: "推荐", platform: .kugou),
-            PlaylistCategory(id: "1", name: "华语", platform: .kugou),
-            PlaylistCategory(id: "2", name: "欧美", platform: .kugou),
-            PlaylistCategory(id: "3", name: "日语", platform: .kugou),
-            PlaylistCategory(id: "4", name: "韩语", platform: .kugou),
-            PlaylistCategory(id: "5", name: "粤语", platform: .kugou),
-            PlaylistCategory(id: "6", name: "流行", platform: .kugou),
-            PlaylistCategory(id: "7", name: "摇滚", platform: .kugou),
-            PlaylistCategory(id: "8", name: "民谣", platform: .kugou),
-            PlaylistCategory(id: "9", name: "电子", platform: .kugou),
-            PlaylistCategory(id: "10", name: "说唱", platform: .kugou),
-            PlaylistCategory(id: "11", name: "轻音乐", platform: .kugou),
-            PlaylistCategory(id: "12", name: "爵士", platform: .kugou),
-            PlaylistCategory(id: "13", name: "古典", platform: .kugou),
-            PlaylistCategory(id: "14", name: "乡村", platform: .kugou),
-            PlaylistCategory(id: "15", name: "怀旧", platform: .kugou),
-            PlaylistCategory(id: "16", name: "影视", platform: .kugou),
-            PlaylistCategory(id: "17", name: "ACG", platform: .kugou),
-        ]
+        // 动态自适应：从酷狗标签树接口实时拉取，不再写死分类。
+        var categories: [PlaylistCategory] = []
+        categories.append(PlaylistCategory(id: "", name: "推荐", platform: .kugou))
+
+        guard let url = buildURL(
+            base: "http://mobilecdnbj.kugou.com/api/v3/tag/list",
+            queryItems: [
+                URLQueryItem(name: "plat", value: "0"),
+                URLQueryItem(name: "version", value: "9108")
+            ]
+        ) else { return categories }
+
+        guard let result = await httpGet(url: url, headers: kugouHeaders()) as? [String: Any] else { return categories }
+        guard let data = safeDict(result, "data") else { return categories }
+        guard let info = safeArray(data, "info") else { return categories }
+
+        // 一级分类：取每个标签分类的 id 与名称（对应歌单 tag 接口的 tagid）
+        var seen = Set<String>()
+        for group in info {
+            guard let dict = group as? [String: Any] else { continue }
+            let rawId = firstNonNil(
+                safeString(dict, "special_tag_id"),
+                safeInt(dict, "special_tag_id").map { String($0) },
+                safeString(dict, "id"),
+                safeInt(dict, "id").map { String($0) }
+            ) ?? ""
+            let name = firstNonNil(safeString(dict, "name")) ?? ""
+            if name.isEmpty || rawId.isEmpty { continue }
+            // 跳过纯运营位（如“排行榜”“专属定制”等无歌单分类标签）
+            if seen.contains(rawId) { continue }
+            seen.insert(rawId)
+            categories.append(PlaylistCategory(id: rawId, name: name, platform: .kugou))
+        }
+
+        return categories
     }
 
     private func kugouPlaylists(category: String?, page: Int) async -> [PlaylistItem] {
@@ -1315,11 +1312,11 @@ final class MusicPlaylistService {
                 URLQueryItem(name: "appUid", value: "76039576")
             ]
         ) else {
-            return kuwoFallbackCategories()
+            return [PlaylistCategory(id: "", name: "推荐", platform: .kuwo)]
         }
 
         guard let result = await httpGet(url: url, headers: kuwoHeaders()) as? [String: Any] else {
-            return kuwoFallbackCategories()
+            return [PlaylistCategory(id: "", name: "推荐", platform: .kuwo)]
         }
 
         var categories: [PlaylistCategory] = []
@@ -1344,32 +1341,7 @@ final class MusicPlaylistService {
             }
         }
 
-        if categories.count <= 1 {
-            return kuwoFallbackCategories()
-        }
-
         return categories
-    }
-
-    private func kuwoFallbackCategories() -> [PlaylistCategory] {
-        return [
-            PlaylistCategory(id: "", name: "推荐", platform: .kuwo),
-            PlaylistCategory(id: "184", name: "华语", platform: .kuwo),
-            PlaylistCategory(id: "185", name: "欧美", platform: .kuwo),
-            PlaylistCategory(id: "187", name: "日韩", platform: .kuwo),
-            PlaylistCategory(id: "186", name: "粤语", platform: .kuwo),
-            PlaylistCategory(id: "170", name: "流行", platform: .kuwo),
-            PlaylistCategory(id: "171", name: "摇滚", platform: .kuwo),
-            PlaylistCategory(id: "172", name: "民谣", platform: .kuwo),
-            PlaylistCategory(id: "173", name: "电子", platform: .kuwo),
-            PlaylistCategory(id: "174", name: "说唱", platform: .kuwo),
-            PlaylistCategory(id: "175", name: "爵士", platform: .kuwo),
-            PlaylistCategory(id: "176", name: "古典", platform: .kuwo),
-            PlaylistCategory(id: "177", name: "乡村", platform: .kuwo),
-            PlaylistCategory(id: "178", name: "怀旧", platform: .kuwo),
-            PlaylistCategory(id: "179", name: "影视", platform: .kuwo),
-            PlaylistCategory(id: "180", name: "网络", platform: .kuwo),
-        ]
     }
 
     private func kuwoPlaylists(category: String?, page: Int) async -> [PlaylistItem] {
@@ -1690,11 +1662,11 @@ final class MusicPlaylistService {
             base: "https://app.c.nf.migu.cn/pc/bmw/page-data/playlist-square/v1.0",
             queryItems: [URLQueryItem(name: "templateVersion", value: "1")]
         ) else {
-            return miguFallbackCategories()
+            return [PlaylistCategory(id: "", name: "推荐", platform: .migu)]
         }
 
         guard let result = await httpGet(url: url, headers: miguHeaders()) as? [String: Any] else {
-            return miguFallbackCategories()
+            return [PlaylistCategory(id: "", name: "推荐", platform: .migu)]
         }
 
         var categories: [PlaylistCategory] = []
@@ -1744,31 +1716,7 @@ final class MusicPlaylistService {
             }
         }
 
-        if categories.count <= 1 {
-            return miguFallbackCategories()
-        }
-
         return categories
-    }
-
-    private func miguFallbackCategories() -> [PlaylistCategory] {
-        return [
-            PlaylistCategory(id: "", name: "推荐", platform: .migu),
-            PlaylistCategory(id: "1", name: "华语", platform: .migu),
-            PlaylistCategory(id: "2", name: "欧美", platform: .migu),
-            PlaylistCategory(id: "3", name: "日韩", platform: .migu),
-            PlaylistCategory(id: "4", name: "粤语", platform: .migu),
-            PlaylistCategory(id: "5", name: "流行", platform: .migu),
-            PlaylistCategory(id: "6", name: "摇滚", platform: .migu),
-            PlaylistCategory(id: "7", name: "民谣", platform: .migu),
-            PlaylistCategory(id: "8", name: "电子", platform: .migu),
-            PlaylistCategory(id: "9", name: "说唱", platform: .migu),
-            PlaylistCategory(id: "10", name: "爵士", platform: .migu),
-            PlaylistCategory(id: "11", name: "古典", platform: .migu),
-            PlaylistCategory(id: "12", name: "影视", platform: .migu),
-            PlaylistCategory(id: "13", name: "怀旧", platform: .migu),
-            PlaylistCategory(id: "14", name: "ACG", platform: .migu),
-        ]
     }
 
     private func miguPlaylists(category: String?, page: Int) async -> [PlaylistItem] {
