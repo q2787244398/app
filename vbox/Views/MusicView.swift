@@ -711,10 +711,10 @@ struct MusicView: View {
                         return (i, qi)
                     }
                 }
-                var winner: (Int, MusicQueueItem)? = nil
+                var winner: (index: Int, item: MusicQueueItem)? = nil
                 for await res in group {
-                    if let res = res, let item = res.item {
-                        winner = (res.index, item)
+                    if let res = res, let item = res.1 {
+                        winner = (index: res.0, item: item)
                         group.cancelAll()
                         break
                     }
@@ -1920,10 +1920,10 @@ final class MusicViewModel: ObservableObject {
                     return (i, item)
                 }
             }
-            var winner: (Int, MusicQueueItem)? = nil
+            var winner: (index: Int, item: MusicQueueItem)? = nil
             for await res in group {
-                if let res = res, let item = res.item {
-                    winner = (res.index, item)
+                if let res = res, let item = res.1 {
+                    winner = (index: res.0, item: item)
                     group.cancelAll()
                     break
                 }
