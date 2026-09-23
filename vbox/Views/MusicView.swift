@@ -290,7 +290,10 @@ struct MusicView: View {
     /// 含源分类栏 + 推荐歌曲列表，点歌即用所选源并发解析播放。
     private var sourceHomeContent: some View {
         VStack(spacing: 0) {
-            if viewModel.sourceHomeLoading && viewModel.sourceHome == nil {
+            // P3-C3：普通源首页若打开了「榜单/歌单入口」的二级歌曲列表，直接展示二级列表
+            if viewModel.sourceHomeDetail != nil {
+                sourceHomeDetailList
+            } else if viewModel.sourceHomeLoading && viewModel.sourceHome == nil {
                 loadingView(text: "加载源首页...")
             } else if let home = viewModel.sourceHome {
                 // 分类栏（若该源返回分类标签；无则整栏隐藏，不造成“不变化”错觉）
@@ -323,7 +326,7 @@ struct MusicView: View {
                     List {
                         ForEach(home.recommended) { song in
                             MusicRowView(song: song, accentColor: accentColor) {
-                                playSearchSong(song)
+                                openSourceEntry(song)
                             }
                         }
                     }
@@ -331,6 +334,52 @@ struct MusicView: View {
                 }
             } else {
                 emptyView(systemImage: "music.mic", text: "该源暂无首页数据，可点右上角搜索")
+            }
+        }
+    }
+
+    /// P3-C3：普通源首页「榜单/歌单入口」的二级歌曲列表
+    private var sourceHomeDetailList: some View {
+        VStack(spacing: 0) {
+            // 顶部：返回按钮 + 榜单名
+            HStack(spacing: 12) {
+                Button {
+                    viewModel.sourceHomeDetail = nil
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("返回")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(accentColor)
+                }
+                .buttonStyle(.plain)
+                Text(viewModel.sourceHomeDetailTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            Divider().opacity(0.4)
+
+            if viewModel.isResolvingSourceHomeDetail {
+                loadingView(text: "加载榜单歌曲...")
+            } else {
+                let songs = viewModel.sourceHomeDetail ?? []
+                if songs.isEmpty {
+                    emptyView(systemImage: "music.note.list", text: "该榜单暂无歌曲")
+                } else {
+                    List {
+                        ForEach(songs) { song in
+                            MusicRowView(song: song, accentColor: accentColor) {
+                                playSearchSong(song)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
             }
         }
     }
@@ -729,6 +778,39 @@ struct MusicView: View {
             }
             viewModel.log(.error, "搜索歌曲解析失败", "《\(item.vodName)》所有源均未返回播放地址（平台 \(item.musicPlatform ?? "-")）")
             viewModel.singleSongNotice = "解析《\(item.vodName)》失败：所有源未返回地址"
+        }
+    }
+
+    /// P3-C3：点击普通源首页条目。若该条目是榜单/歌单入口，下钻进二级歌曲列表再选歌；
+    /// 若下钻无结果（实为可播放单曲），则直接按单曲播放。
+    private func openSourceEntry(_ item: VodItem) {
+        guard let source = viewModel.selectedSource else { return }
+        viewModel.log(.start, "处理源首页条目", "《\(item.vodName)》类型 \(item.musicEntryType ?? "未知")")
+
+        // 若该条目已明确是单曲（含平台/播放信息），直接播放
+        let looksLikeSong = !(item.lxMusicInfo?.isEmpty ?? true)
+                            || !(item.musicPlatform?.isEmpty ?? true)
+                            || item.vodPlayUrl != nil
+        if looksLikeSong && (item.vodPlayUrl != nil || item.musicPlatform != nil) {
+            viewModel.log(.info, "识别为单曲", "《\(item.vodName)》直接播放")
+            playSearchSong(item)
+            return
+        }
+
+        // 否则按榜单/歌单入口处理：下钻取二级歌曲列表（接口优先 + 搜索兜底）
+        Task {
+            viewModel.isResolvingSourceHomeDetail = true
+            defer { viewModel.isResolvingSourceHomeDetail = false }
+            let songs = await SpiderManager.shared.fetchSourceEntryContent(source: source, item: item)
+            if songs.isEmpty {
+                viewModel.log(.info, "无法下钻榜单", "《\(item.vodName)》取不到二级歌曲，按单曲尝试播放")
+                // 兜底：无法下钻也可能本来就是这个源返回的单曲，退化为直接播放
+                playSearchSong(item)
+                return
+            }
+            viewModel.sourceHomeDetailTitle = item.vodName
+            viewModel.sourceHomeDetail = songs
+            viewModel.log(.success, "进入榜单", "[\(source.name)]《\(item.vodName)》二级歌曲 \(songs.count) 首")
         }
     }
 }
@@ -1531,6 +1613,10 @@ final class MusicViewModel: ObservableObject {
     // 非聚合（普通音乐源）首页：无平台标签时展示源自身首页/分类数据
     @Published var sourceHome: SourceHomeData? = nil
     @Published var sourceHomeLoading: Bool = false
+    // P3-C3：普通源首页「榜单/歌单入口」的二级歌曲列表（点榜单进列表再选歌播放）
+    @Published var sourceHomeDetail: [VodItem]? = nil
+    @Published var sourceHomeDetailTitle: String = ""
+    @Published var isResolvingSourceHomeDetail: Bool = false
 
     // 搜索
     @Published var searchMode: Bool = false
@@ -1653,6 +1739,10 @@ final class MusicViewModel: ObservableObject {
             return
         }
         selectedSource = source
+        self.selectedCategory = nil
+        // P3-C3：切源时清空普通源首页的二级榜单列表状态
+        self.sourceHomeDetail = nil
+        self.sourceHomeDetailTitle = ""
         log(.start, "切换播放源", source.name)
         log(.success, "已切换", "当前源 [\(source.name)]，引擎Key \(source.engineKey ?? "nil")")
         if isSelectedSourceAggregator {

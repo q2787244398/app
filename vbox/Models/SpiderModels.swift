@@ -212,13 +212,17 @@ struct VodItem: Codable, Identifiable {
     /// P1-A7：lx 搜索返回的原始 song 字典 JSON（含 hash/songmid/name/singer/albumName 等字段）。
     /// 许多插件（念心）直接读 musicInfo 里的平台专有字段（hash/songmid），必须原样带回播放。
     var lxMusicInfo: String?
+    /// P3-C3：条目类型标记。`song` 表示可播放单曲；`toplist`/`playlist` 表示榜单入口，
+    /// 点击应进入该条目的二级歌曲列表再选歌播放，而非直接当单曲播放。
+    /// 主要用于普通音乐源首页：某些源（如千千/酷狗等）返回的 list 实为榜单列表而非歌曲。
+    var musicEntryType: String?
 
     init(vodId: String, vodName: String, vodPic: String, vodRemarks: String? = nil,
          vodYear: String? = nil, vodArea: String? = nil, vodDirector: String? = nil,
          vodActor: String? = nil, vodContent: String? = nil, vodPlayFrom: String? = nil,
          vodPlayUrl: String? = nil, customHeaders: [String: String]? = nil, engineKey: String? = nil,
          metaDuration: Int? = nil, albumName: String? = nil, availQualities: [String] = [],
-         musicPlatform: String? = nil, lxMusicInfo: String? = nil) {
+         musicPlatform: String? = nil, lxMusicInfo: String? = nil, musicEntryType: String? = nil) {
         self.vodId = vodId
         self.vodName = vodName
         self.vodPic = vodPic
@@ -237,6 +241,7 @@ struct VodItem: Codable, Identifiable {
         self.availQualities = availQualities
         self.musicPlatform = musicPlatform
         self.lxMusicInfo = lxMusicInfo
+        self.musicEntryType = musicEntryType
     }
 
     enum CodingKeys: String, CodingKey {
@@ -254,6 +259,7 @@ struct VodItem: Codable, Identifiable {
         case customHeaders
         case engineKey
         case metaDuration, albumName, availQualities, musicPlatform, lxMusicInfo
+        case musicEntryType
     }
 
     /// 显式解码：新增元数据字段全部 decodeIfPresent/默认回退，
@@ -278,6 +284,7 @@ struct VodItem: Codable, Identifiable {
         availQualities = try c.decodeIfPresent([String].self, forKey: .availQualities) ?? []
         musicPlatform = try c.decodeIfPresent(String.self, forKey: .musicPlatform)
         lxMusicInfo = try c.decodeIfPresent(String.self, forKey: .lxMusicInfo)
+        musicEntryType = try c.decodeIfPresent(String.self, forKey: .musicEntryType)
     }
 }
 

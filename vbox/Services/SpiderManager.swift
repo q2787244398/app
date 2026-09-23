@@ -5476,6 +5476,52 @@ globalThis.__JS_SPIDER__ = _spider;
         return allItems.filter { $0.category == .music }
     }
 
+    /// P3-C3：取普通音乐源某「榜单/歌单入口」条目的二级歌曲列表。
+    /// 普通源（非 lx 聚合）首页返回的 list 可能是榜单/歌单入口而非可直接播放的单曲，
+    /// 点击时应先下钻拿到该榜单下的歌曲列表再选择播放，而不是直接当作单曲。
+    /// 策略：先用该引擎的 category 接口（以条目 id 作 tid）取列表；空则回退用条目名在源内搜索。
+    func fetchSourceEntryContent(source: SourceDisplayItem, item: VodItem) async -> [VodItem] {
+        guard source.category == .music,
+              let key = source.engineKey,
+              let engine = engines[key] else { return [] }
+
+        await waitForNodeReadyIfNeeded()
+
+        // lx 聚合源不在此路径（普通源首页识别不会命中 lxKeyMap），防御性兜底
+        if let lx = engine as? LXBridgeEngine, LXBridgeEngine.lxKeyMap[key] != nil {
+            return []
+        }
+
+        var out: [VodItem] = []
+
+        // 1) 接口优先：用条目 id 调 category 接口取榜单内歌曲
+        let tid = item.vodId.isEmpty ? item.vodName : item.vodId
+        if !tid.isEmpty {
+            if let csp = engine as? NodeSpiderEngine, csp.isSpiderReady {
+                if let result = try? csp.callCategoryContent(tid: tid, pg: 1, extend: item.vodName) {
+                    var list = result.list ?? []
+                    for i in 0..<list.count {
+                        list[i].engineKey = key
+                        if list[i].vodRemarks == nil || list[i].vodRemarks?.isEmpty == true {
+                            list[i].vodRemarks = source.name
+                        }
+                    }
+                    out = list
+                }
+            }
+        }
+
+        // 2) 搜索兜底：接口无结果时用条目名（榜单名）在源内搜索
+        if out.isEmpty, !item.vodName.isEmpty {
+            out = await searchInMusicSource(source: source, keyword: item.vodName, pg: 1)
+            for i in 0..<out.count {
+                out[i].engineKey = key
+            }
+        }
+
+        return out
+    }
+
     /// 在单个音乐源中搜索（`platform` 非空时仅搜索该子平台，供聚合源平台行使用）
     func searchInMusicSource(source: SourceDisplayItem, keyword: String, pg: Int = 1, platform: String? = nil) async -> [VodItem] {
         guard source.category == .music,
