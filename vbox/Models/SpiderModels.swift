@@ -184,22 +184,6 @@ struct VodCategory: Codable, Identifiable, Equatable {
         case typeId = "type_id"
         case typeName = "type_name"
     }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        // 容错：部分 Node/WEX 秒播源把 type_id 返回为数字，这里统一 String 优先、数字自动转字符串，
-        // 避免首页 class 因类型不匹配而整段解码失败
-        typeId = Self.decodeString(c, forKey: .typeId) ?? ""
-        typeName = Self.decodeString(c, forKey: .typeName) ?? ""
-    }
-
-    /// 容错解码：兼容 JSON 中字段为字符串或数字（Int/Double）两种情况，取不到返回 nil
-    static func decodeString(_ c: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> String? {
-        if let s = try? c.decodeIfPresent(String.self, forKey: key), !s.isEmpty { return s }
-        if let n = try? c.decodeIfPresent(Int.self, forKey: key) { return String(n) }
-        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return String(d) }
-        return nil
-    }
 }
 
 struct VodItem: Codable, Identifiable {
