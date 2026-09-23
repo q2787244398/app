@@ -1433,7 +1433,8 @@ final class MusicViewModel: ObservableObject {
         return f
     }()
 
-    /// 记录一条步骤；自动追加并保留最近 60 条
+    /// 记录一条步骤；自动追加并保留最近 60 条。
+    /// 同时桥接到全局调试日志 AppLogStore（.music 分类），便于在“开发调试”日志里统一追溯。
     func log(_ level: LogLevel, _ title: String, _ detail: String = "") {
         let entry = LogEntry(
             time: Self.logFormatter.string(from: Date()),
@@ -1444,6 +1445,17 @@ final class MusicViewModel: ObservableObject {
         activityLog.append(entry)
         if activityLog.count > 60 {
             activityLog.removeFirst(activityLog.count - 60)
+        }
+
+        // 桥接到 AppLogStore：音乐模块日志进全局调试日志
+        let message = detail.isEmpty ? title : "\(title) — \(detail)"
+        switch level {
+        case .start, .info:
+            AppLogInfo(.music, message)
+        case .success:
+            AppLogInfo(.music, message)
+        case .error:
+            AppLogError(.music, message)
         }
     }
 
