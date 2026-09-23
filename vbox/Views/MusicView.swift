@@ -59,8 +59,9 @@ struct MusicView: View {
                     Divider().opacity(0.4)
                     // 内容类型切换：歌单广场 / 排行榜
                     contentTypeTabs
-                    // 歌单广场模式：分类标签栏
-                    if viewModel.selectedTab == .playlist {
+                    // 歌单广场模式：分类标签栏（仅当该源/平台真的有分类标签时显示；
+                    // 无标签直接展示接口数据，避免空标签栏造成“不变化”的错觉）
+                    if viewModel.selectedTab == .playlist && !viewModel.categories.isEmpty {
                         tagFilterBar
                     }
                     contentArea
@@ -76,6 +77,24 @@ struct MusicView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(accentColor)
+                    }
+                }
+                // 右：活动日志
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        viewModel.showActivityLog.toggle()
+                    }) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "list.bullet.rectangle")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(accentColor)
+                            if viewModel.activityLog.contains(where: { $0.level == .error }) {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: 4, y: -4)
+                            }
+                        }
                     }
                 }
                 // 右：搜索（切换搜索模式）
@@ -110,6 +129,9 @@ struct MusicView: View {
         .onChange(of: viewModel.searchMode) { isOn in
             searchFieldFocused = isOn
         }
+        .sheet(isPresented: $viewModel.showActivityLog) {
+            ActivityLogPanel(viewModel: viewModel, accentColor: accentColor)
+        }
     }
 
     // MARK: - 播放源切换器
@@ -119,7 +141,7 @@ struct MusicView: View {
             HStack(spacing: 10) {
                 ForEach(viewModel.musicSources, id: \.id) { source in
                     let isSelected = viewModel.selectedSource?.id == source.id
-                    Button(action: { viewModel.selectedSource = source }) {
+                    Button(action: { Task { await viewModel.selectSource(source) } }) {
                         HStack(spacing: 6) {
                             Image(systemName: "music.note")
                                 .font(.system(size: 12))
@@ -488,22 +510,51 @@ struct MusicView: View {
             } else if viewModel.searchResults.isEmpty {
                 emptyView(systemImage: "music.mic", text: "未找到相关歌曲")
             } else {
-                List {
-                    ForEach(viewModel.searchResults, id: \.vodId) { song in
-                        MusicRowView(song: song, accentColor: accentColor) {
-                            playSearchSong(song)
-                        }
-                    }
-                    if viewModel.isSearching {
-                        HStack {
-                            Spacer()
-                            ProgressView().tint(accentColor)
+                VStack(spacing: 0) {
+                    if viewModel.isResolvingSingleSong {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("正在解析播放地址…").font(.system(size: 12))
                             Spacer()
                         }
-                        .listRowSeparator(.hidden)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    } else if let notice = viewModel.singleSongNotice {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12))
+                            Text(notice).font(.system(size: 12)).lineLimit(2)
+                            Spacer()
+                            Button {
+                                viewModel.singleSongNotice = nil
+                            } label: {
+                                Image(systemName: "xmark").font(.system(size: 12))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .foregroundColor(.red)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.10)))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
                     }
+                    List {
+                        ForEach(viewModel.searchResults, id: \.vodId) { song in
+                            MusicRowView(song: song, accentColor: accentColor) {
+                                playSearchSong(song)
+                            }
+                        }
+                        if viewModel.isSearching {
+                            HStack {
+                                Spacer()
+                                ProgressView().tint(accentColor)
+                                Spacer()
+                            }
+                            .listRowSeparator(.hidden)
+                        }
+                    }
+                    .listStyle(.plain)
                 }
-                .listStyle(.plain)
             }
         }
     }
@@ -572,10 +623,23 @@ struct MusicView: View {
     /// 跨源搜索结果（VodItem）的播放：用选中源（或歌曲归属源）解析播放地址后播放
     private func playSearchSong(_ item: VodItem) {
         guard let source = viewModel.selectedSource
-            ?? viewModel.musicSources.first(where: { $0.engineKey == item.engineKey }) else { return }
-        Task {
-            let (playUrl, _) = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: item)
-            guard let url = playUrl, !url.isEmpty else { return }
+            ?? viewModel.musicSources.first(where: { $0.engineKey == item.engineKey }) else {
+            viewModel.log(.error, "无可播放源", "《\(item.vodName)》未找到匹配的音乐源")
+            viewModel.singleSongNotice = "未找到匹配的音乐源，请先在顶部选择源"
+            return
+        }
+        Task { @MainActor in
+            viewModel.log(.start, "解析搜索歌曲", "《\(item.vodName)》 源[\(source.name)]")
+            viewModel.isResolvingSingleSong = true
+            viewModel.singleSongNotice = nil
+            defer { viewModel.isResolvingSingleSong = false }
+            let result = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: item)
+            guard let url = result.playUrl, !url.isEmpty else {
+                viewModel.log(.error, "搜索歌曲解析失败", "[\(source.name)] 未返回播放地址（平台 \(item.musicPlatform ?? "-")）")
+                viewModel.singleSongNotice = "解析《\(item.vodName)》失败：未返回播放地址"
+                return
+            }
+            viewModel.log(.success, "解析成功并播放", "《\(item.vodName)》\(url.prefix(60))…")
             let queueItem = MusicQueueItem(
                 from: item,
                 sourceName: source.name,
@@ -584,6 +648,95 @@ struct MusicView: View {
             )
             AudioPlayerManager.shared.play(item: queueItem)
         }
+    }
+}
+
+// MARK: - 活动日志面板
+
+/// 网络音乐整体步骤/响应日志：展示每一次操作的开始、成功、失败、详情。
+struct ActivityLogPanel: View {
+    @ObservedObject var viewModel: MusicViewModel
+    let accentColor: Color
+
+    var body: some View {
+        NavigationView {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 6) {
+                        if viewModel.activityLog.isEmpty {
+                            VStack(spacing: 10) {
+                                Image(systemName: "tray")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(.secondary)
+                                Text("暂无日志")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.top, 80)
+                        } else {
+                            ForEach(viewModel.activityLog) { entry in
+                                LogRow(entry: entry)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 20)
+                }
+                .onChange(of: viewModel.activityLog.count) { _ in
+                    withAnimation { proxy.scrollTo(viewModel.activityLog.last?.id, anchor: .bottom) }
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("操作日志")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { viewModel.showActivityLog = false }
+                        .foregroundColor(accentColor)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("清空") { viewModel.activityLog = [] }
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+struct LogRow: View {
+    let entry: MusicViewModel.LogEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: entry.level.icon)
+                .font(.system(size: 14))
+                .foregroundColor(entry.level.color)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(entry.time)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    Text(entry.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                }
+                if !entry.detail.isEmpty {
+                    Text(entry.detail)
+                        .font(.system(size: 11))
+                        .foregroundColor(entry.level.color.opacity(0.85))
+                        .lineLimit(3)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
 }
 
@@ -1240,6 +1393,60 @@ final class MusicViewModel: ObservableObject {
     @Published var isResolvingSingleSong: Bool = false
     @Published var singleSongNotice: String? = nil
 
+    // MARK: - 活动日志（整个网络音乐逐步响应 / 错误 / 步骤过程）
+
+    /// 日志等级
+    enum LogLevel: Equatable {
+        case start, success, info, error
+        var color: Color {
+            switch self {
+            case .start:   return .blue
+            case .success: return .green
+            case .info:    return .secondary
+            case .error:   return .red
+            }
+        }
+        var icon: String {
+            switch self {
+            case .start:   return "circle.dotted"
+            case .success: return "checkmark.circle"
+            case .info:    return "info.circle"
+            case .error:   return "xmark.circle"
+            }
+        }
+    }
+
+    /// 单条步骤记录
+    struct LogEntry: Identifiable {
+        let id = UUID()
+        let time: String
+        let level: LogLevel
+        let title: String
+        let detail: String
+    }
+
+    @Published var activityLog: [LogEntry] = []
+    @Published var showActivityLog: Bool = false
+    private static let logFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
+
+    /// 记录一条步骤；自动追加并保留最近 60 条
+    func log(_ level: LogLevel, _ title: String, _ detail: String = "") {
+        let entry = LogEntry(
+            time: Self.logFormatter.string(from: Date()),
+            level: level,
+            title: title,
+            detail: detail
+        )
+        activityLog.append(entry)
+        if activityLog.count > 60 {
+            activityLog.removeFirst(activityLog.count - 60)
+        }
+    }
+
     /// 当前播放源是否 lx 聚合源（决定跨平台歌单播放可用性 / 提示）
     var isSelectedSourceAggregator: Bool {
         let key = selectedSource?.engineKey ?? ""
@@ -1256,8 +1463,34 @@ final class MusicViewModel: ObservableObject {
     // MARK: - 加载源列表（决定播放后端）
 
     func loadSources() async {
+        log(.start, "加载音乐源列表")
         musicSources = SpiderManager.shared.getMusicSources()
         if selectedSource == nil { selectedSource = musicSources.first }
+        if musicSources.isEmpty {
+            log(.error, "未发现音乐源", "将使用默认解析")
+        } else {
+            log(.success, "音乐源加载完成", "共 \(musicSources.count) 个：\(musicSources.map { $0.name }.joined(separator: "、"))")
+            log(.info, "当前源", selectedSource?.name ?? "nil")
+        }
+    }
+
+    /// 切换播放源 → 记录日志并按需刷新当前内容（平台/标签接口数据通常独立于源，重载以确认）
+    func selectSource(_ source: SourceDisplayItem) async {
+        guard selectedSource?.id != source.id else {
+            log(.info, "已处于源 [\(source.name)]", "无需切换")
+            return
+        }
+        selectedSource = source
+        log(.start, "切换播放源", source.name)
+        log(.success, "已切换", "当前源 [\(source.name)]，引擎Key \(source.engineKey ?? "nil")")
+        // 内容数据（歌单/榜单）来自所选平台接口，与播放源解耦；这里重载分类+列表，
+        // 让“点源后下方内容确实随接口变化”的期望成立
+        await loadCategories()
+        if selectedTab == .playlist {
+            await loadPlaylists(page: 1)
+        } else {
+            await loadRankings()
+        }
     }
 
     // MARK: - 平台 / 内容类型 / 分类 切换
@@ -1265,6 +1498,7 @@ final class MusicViewModel: ObservableObject {
     /// 切换平台 → 重载分类 + 歌单 / 榜单
     func selectPlatform(_ p: MusicPlatformType) async {
         guard selectedPlatform != p else { return }
+        log(.start, "切换平台", "\(selectedPlatform.displayName) → \(p.displayName)")
         selectedPlatform = p
         selectedCategory = nil
         await loadCategories()
@@ -1294,7 +1528,11 @@ final class MusicViewModel: ObservableObject {
     // MARK: - 加载分类
 
     func loadCategories() async {
+        log(.start, "加载分类标签", "平台 \(selectedPlatform.displayName)（\(selectedPlatform.rawValue)）")
         categories = await MusicPlaylistService.shared.getPlaylistCategories(platform: selectedPlatform)
+        // 过滤掉接口自带的“全部”做统计（不影响展示）
+        let real = categories.filter { $0.name != "全部" }
+        log(.success, "分类加载完成", "共 \(categories.count) 个标签：\(real.prefix(8).map { $0.name }.joined(separator: "、"))\(real.count > 8 ? "…" : "")")
     }
 
     // MARK: - 加载歌单（支持分页）
@@ -1318,6 +1556,15 @@ final class MusicViewModel: ObservableObject {
         )
 
         if isFirst {
+            log(.info, "歌单加载", "平台=\(selectedPlatform.displayName) 分类=\(selectedCategory ?? "全部") page=\(max(page,1))")
+            if items.isEmpty {
+                log(.error, "歌单为空", "当前平台/分类未返回任何歌单（平台接口可能收紧或分类无内容）")
+            } else {
+                log(.success, "歌单加载完成", "第\(max(page,1))页返回 \(items.count) 个")
+            }
+        }
+
+        if isFirst {
             playlists = items
         } else {
             playlists.append(contentsOf: items)
@@ -1336,27 +1583,42 @@ final class MusicViewModel: ObservableObject {
     // MARK: - 加载排行榜
 
     func loadRankings() async {
+        log(.start, "加载排行榜", "平台 \(selectedPlatform.displayName)")
         isLoading = true
         rankings = await MusicPlaylistService.shared.getRankings(platform: selectedPlatform)
+        if rankings.isEmpty {
+            log(.error, "排行榜为空", "平台接口未返回榜单数据")
+        } else {
+            log(.success, "排行榜加载完成", "共 \(rankings.count) 个榜单")
+        }
         isLoading = false
     }
 
     // MARK: - 搜索：搜歌曲（跨源，VodItem）
 
     func searchSongs(keyword: String) async {
+        log(.start, "搜索歌曲", "关键词「\(keyword)」，跨全部音乐源")
         isSearching = true
         searchResults = []
+        var total = 0
         await SpiderManager.shared.searchAllMusicSources(keyword: keyword) { [weak self] batch in
             Task { @MainActor in
                 self?.searchResults.append(contentsOf: batch)
             }
+            total += batch.count
         }
         isSearching = false
+        if total == 0 {
+            log(.error, "搜索无结果", "「\(keyword)」在所有源均未找到")
+        } else {
+            log(.success, "搜索完成", "共返回 \(total) 条（跨源合并）")
+        }
     }
 
     // MARK: - 搜索：搜歌单（当前选中平台）
 
     func searchPlaylists(keyword: String) async {
+        log(.start, "搜索歌单", "关键词「\(keyword)」，平台 \(selectedPlatform.displayName)")
         isSearching = true
         playlistSearchResults = []
         let items = await MusicPlaylistService.shared.searchPlaylists(
@@ -1366,6 +1628,11 @@ final class MusicViewModel: ObservableObject {
         )
         playlistSearchResults = items
         isSearching = false
+        if items.isEmpty {
+            log(.error, "歌单搜索无结果", "平台 \(selectedPlatform.displayName) 未返回")
+        } else {
+            log(.success, "歌单搜索完成", "共 \(items.count) 条")
+        }
     }
 
     /// 清空搜索结果（关键词为空时调用）
@@ -1385,7 +1652,13 @@ final class MusicViewModel: ObservableObject {
 
     /// 将歌曲归属平台+当前源解析播放地址；固定源跨平台失败时自动回退到 lx 聚合源（#3）
     private func resolvePlayFor(_ song: PlaylistSong) async -> MusicQueueItem? {
-        for source in resolutionCandidates(for: song) {
+        let candidates = resolutionCandidates(for: song)
+        log(.start, "解析播放地址", "《\(song.name)》，候选源 \(candidates.count) 个")
+        if candidates.isEmpty {
+            log(.error, "无候选播放源", "请先在顶部选择刀源/念心等音乐源")
+            return nil
+        }
+        for (i, source) in candidates.enumerated() {
             var vodItem = VodItem(
                 vodId: song.id,
                 vodName: song.name,
@@ -1394,16 +1667,21 @@ final class MusicViewModel: ObservableObject {
                 musicPlatform: song.platform,
                 lxMusicInfo: song.rawInfo
             )
-            let (playUrl, _) = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: vodItem)
-            if let url = playUrl, !url.isEmpty {
+            log(.info, "尝试源 \(i+1)/\(candidates.count)", "[\(source.name)] engine=\(source.engineKey ?? "nil")")
+            let result = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: vodItem)
+            if let url = result.playUrl, !url.isEmpty {
+                log(.success, "解析成功", "[\(source.name)] 返回播放地址 \(url.prefix(60))…")
                 return MusicQueueItem(
                     from: vodItem,
                     sourceName: source.name,
                     engineKey: source.engineKey ?? "",
                     playURL: url
                 )
+            } else {
+                log(.error, "源 \(source.name) 失败", "未返回播放地址（平台 \(song.platform == "" ? "-" : song.platform) / 归属源 \(result.playFrom ?? "nil")）")
             }
         }
+        log(.error, "全部候选源均失败", "《\(song.name)》无法解析播放地址")
         return nil
     }
 
@@ -1439,6 +1717,7 @@ final class MusicViewModel: ObservableObject {
             singleSongNotice = "未能解析播放地址，请切换到刀源/念心源再试"
             return
         }
+        log(.success, "开始播放", "《\(song.name)》via \(item.sourceName)")
         AudioPlayerManager.shared.play(item: item)
     }
 
