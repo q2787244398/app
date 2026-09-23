@@ -53,8 +53,11 @@ struct MusicView: View {
 
                 if viewModel.searchMode {
                     searchOverlay
+                } else if !viewModel.isSelectedSourceAggregator {
+                    // 非聚合（普通音乐源）：无平台标签，展示该源自身首页/分类/歌曲
+                    sourceHomeContent
                 } else {
-                    // 平台选择（决定歌单 / 榜单的内容来源平台）
+                    // 平台选择（决定歌单 / 榜单的内容来源平台，仅聚合源展示）
                     platformSelector
                     Divider().opacity(0.4)
                     // 内容类型切换：歌单广场 / 排行榜
@@ -121,8 +124,12 @@ struct MusicView: View {
         }
         .task {
             await viewModel.loadSources()
-            await viewModel.loadCategories()
-            await viewModel.loadPlaylists(page: 1)
+            if viewModel.isSelectedSourceAggregator {
+                await viewModel.loadCategories()
+                await viewModel.loadPlaylists(page: 1)
+            } else {
+                await viewModel.loadSourceHome()
+            }
             // 排行榜数据懒加载：首次切到“排行榜”Tab 时再拉取，避免 isLoading 在
             // 歌单广场模式下造成“加载歌单中…”的误显（selectTab 内部已处理空态拉取）
         }
@@ -274,6 +281,57 @@ struct MusicView: View {
             playlistGrid
         } else {
             rankingList
+        }
+    }
+
+    // MARK: - 非聚合音乐源首页内容（源自身分类 + 歌曲）
+
+    /// 普通音乐源（非刀/念心聚合源）：无平台标签，直接展示该源自身接口数据。
+    /// 含源分类栏 + 推荐歌曲列表，点歌即用所选源并发解析播放。
+    private var sourceHomeContent: some View {
+        VStack(spacing: 0) {
+            if viewModel.sourceHomeLoading && viewModel.sourceHome == nil {
+                loadingView(text: "加载源首页...")
+            } else if let home = viewModel.sourceHome {
+                // 分类栏（若该源返回分类标签；无则整栏隐藏，不造成“不变化”错觉）
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(home.categories, id: \.id) { cat in
+                            let isSelected = viewModel.selectedCategory == cat.id
+                            Button {
+                                Task { await viewModel.selectSourceCategory(cat, for: home) }
+                            } label: {
+                                Text(cat.typeName)
+                                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(isSelected ? accentColor.opacity(0.16) : Color(.systemGray6))
+                                    .foregroundColor(isSelected ? accentColor : .primary)
+                                    .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                }
+                Divider().opacity(0.4)
+
+                if home.recommended.isEmpty {
+                    emptyView(systemImage: "music.mic", text: "该源暂无推荐歌曲，可点右上角搜索")
+                } else {
+                    List {
+                        ForEach(home.recommended) { song in
+                            MusicRowView(song: song, accentColor: accentColor) {
+                                playSearchSong(song)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            } else {
+                emptyView(systemImage: "music.mic", text: "该源暂无首页数据，可点右上角搜索")
+            }
         }
     }
 
@@ -620,33 +678,57 @@ struct MusicView: View {
 
     // MARK: - 搜索歌曲播放
 
-    /// 跨源搜索结果（VodItem）的播放：用选中源（或歌曲归属源）解析播放地址后播放
+    /// 跨源搜索结果（VodItem）的播放：并发竞速所有音乐源，首个命中即播（对标歌一刀）。
     private func playSearchSong(_ item: VodItem) {
-        guard let source = viewModel.selectedSource
-            ?? viewModel.musicSources.first(where: { $0.engineKey == item.engineKey }) else {
+        guard !viewModel.musicSources.isEmpty else {
             viewModel.log(.error, "无可播放源", "《\(item.vodName)》未找到匹配的音乐源")
             viewModel.singleSongNotice = "未找到匹配的音乐源，请先在顶部选择源"
             return
         }
         Task { @MainActor in
-            viewModel.log(.start, "解析搜索歌曲", "《\(item.vodName)》 源[\(source.name)]")
+            viewModel.log(.start, "并发解析搜索歌曲", "《\(item.vodName)》，候选源 \(viewModel.musicSources.count) 个，归属平台 \(item.musicPlatform ?? "-")")
             viewModel.isResolvingSingleSong = true
             viewModel.singleSongNotice = nil
             defer { viewModel.isResolvingSingleSong = false }
-            let result = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: item)
-            guard let url = result.playUrl, !url.isEmpty else {
-                viewModel.log(.error, "搜索歌曲解析失败", "[\(source.name)] 未返回播放地址（平台 \(item.musicPlatform ?? "-")）")
-                viewModel.singleSongNotice = "解析《\(item.vodName)》失败：未返回播放地址"
+
+            // 快照源列表到局部值，避免在任务组子任务里触碰 @MainActor 的 viewModel（并发安全）
+            let sources = viewModel.musicSources
+            let result: (index: Int, item: MusicQueueItem)? = await withTaskGroup(
+                of: (Int, MusicQueueItem?)?.self
+            ) { group in
+                for (i, source) in sources.enumerated() {
+                    group.addTask {
+                        var vod = item
+                        vod.engineKey = source.engineKey
+                        let r = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: vod)
+                        guard let url = r.playUrl, !url.isEmpty else { return nil }
+                        let qi = MusicQueueItem(
+                            from: vod,
+                            sourceName: source.name,
+                            engineKey: source.engineKey ?? "",
+                            playURL: url
+                        )
+                        return (i, qi)
+                    }
+                }
+                var winner: (Int, MusicQueueItem)? = nil
+                for await res in group {
+                    if let res = res {
+                        winner = res
+                        group.cancelAll()
+                        break
+                    }
+                }
+                return winner
+            }
+            if let winner = result {
+                let source = sources[winner.index]
+                viewModel.log(.success, "解析成功并播放", "《\(item.vodName)》[\(source.name)] \(winner.item.playURL.prefix(60))…")
+                AudioPlayerManager.shared.play(item: winner.item)
                 return
             }
-            viewModel.log(.success, "解析成功并播放", "《\(item.vodName)》\(url.prefix(60))…")
-            let queueItem = MusicQueueItem(
-                from: item,
-                sourceName: source.name,
-                engineKey: source.engineKey ?? "",
-                playURL: url
-            )
-            AudioPlayerManager.shared.play(item: queueItem)
+            viewModel.log(.error, "搜索歌曲解析失败", "《\(item.vodName)》所有源均未返回播放地址（平台 \(item.musicPlatform ?? "-")）")
+            viewModel.singleSongNotice = "解析《\(item.vodName)》失败：所有源未返回地址"
         }
     }
 }
@@ -657,6 +739,34 @@ struct MusicView: View {
 struct ActivityLogPanel: View {
     @ObservedObject var viewModel: MusicViewModel
     let accentColor: Color
+
+    /// 导出日志文件（写入临时目录后弹系统分享）
+    @State private var exportedFileURL: URL?
+    @State private var showShareSheet = false
+    @State private var exportNotice: String?
+
+    private func exportLogFile() {
+        let lines = viewModel.activityLog.map { entry in
+            "[\(entry.time)] [\(entry.level.icon)] \(entry.title)\(entry.detail.isEmpty ? "" : " — \(entry.detail)")"
+        }
+        let content = "网络音乐操作日志\n导出于：\(Self.exportFormatter.string(from: Date()))\n共 \(lines.count) 条\n\n" + lines.joined(separator: "\n")
+        let dir = FileManager.default.temporaryDirectory
+        let url = dir.appendingPathComponent("music_operations_log.txt")
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            exportedFileURL = url
+            showShareSheet = true
+            exportNotice = "日志已导出（\(lines.count) 条）"
+        } catch {
+            exportNotice = "导出失败：\(error.localizedDescription)"
+        }
+    }
+
+    private static let exportFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
 
     var body: some View {
         NavigationView {
@@ -695,13 +805,57 @@ struct ActivityLogPanel: View {
                         .foregroundColor(accentColor)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("清空") { viewModel.activityLog = [] }
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 14) {
+                        Button {
+                            exportLogFile()
+                        } label: {
+                            Label("导出", systemImage: "square.and.arrow.up")
+                                .font(.system(size: 14))
+                        }
+                        .foregroundColor(accentColor)
+                        .disabled(viewModel.activityLog.isEmpty)
+
+                        Button("清空") { viewModel.activityLog = [] }
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let notice = exportNotice {
+                    Text(notice)
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray5).opacity(0.95))
+                        .foregroundColor(.primary)
+                        .cornerRadius(10)
+                        .padding(.bottom, 16)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                                withAnimation { exportNotice = nil }
+                            }
+                        }
+                }
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let url = exportedFileURL {
+                    ShareSheet(items: [url])
                 }
             }
         }
         .navigationViewStyle(.stack)
     }
+}
+
+// MARK: - 系统分享（导出日志）
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 struct LogRow: View {
@@ -1374,6 +1528,10 @@ final class MusicViewModel: ObservableObject {
     @Published var rankings: [RankingItem] = []
     @Published var isLoading: Bool = false
 
+    // 非聚合（普通音乐源）首页：无平台标签时展示源自身首页/分类数据
+    @Published var sourceHome: SourceHomeData? = nil
+    @Published var sourceHomeLoading: Bool = false
+
     // 搜索
     @Published var searchMode: Bool = false
     @Published var searchText: String = ""
@@ -1486,7 +1644,9 @@ final class MusicViewModel: ObservableObject {
         }
     }
 
-    /// 切换播放源 → 记录日志并按需刷新当前内容（平台/标签接口数据通常独立于源，重载以确认）
+    /// 切换播放源 → 记录日志并按源类型刷新内容：
+    /// - 聚合源（刀/念心）：展示各平台标签 + 平台接口歌单/榜单
+    /// - 普通音乐源：无平台标签，展示该源自身首页/分类数据
     func selectSource(_ source: SourceDisplayItem) async {
         guard selectedSource?.id != source.id else {
             log(.info, "已处于源 [\(source.name)]", "无需切换")
@@ -1495,13 +1655,74 @@ final class MusicViewModel: ObservableObject {
         selectedSource = source
         log(.start, "切换播放源", source.name)
         log(.success, "已切换", "当前源 [\(source.name)]，引擎Key \(source.engineKey ?? "nil")")
-        // 内容数据（歌单/榜单）来自所选平台接口，与播放源解耦；这里重载分类+列表，
-        // 让“点源后下方内容确实随接口变化”的期望成立
-        await loadCategories()
-        if selectedTab == .playlist {
-            await loadPlaylists(page: 1)
+        if isSelectedSourceAggregator {
+            // 聚合源：平台标签行 + 平台接口内容
+            log(.info, "源类型", "聚合源（支持跨平台），加载平台数据")
+            await loadCategories()
+            if selectedTab == .playlist {
+                await loadPlaylists(page: 1)
+            } else {
+                await loadRankings()
+            }
         } else {
-            await loadRankings()
+            // 普通源：加载该源自身首页/分类
+            log(.info, "源类型", "普通音乐源（无平台标签），加载源自身首页数据")
+            await loadSourceHome()
+        }
+    }
+
+    /// 切到普通源某个分类：加载该分类下的歌曲（复用聚合源搜索词/该引擎分类接口）
+    func selectSourceCategory(_ cat: VodCategory, for home: SourceHomeData) async {
+        guard selectedCategory != cat.id else { return }
+        selectedCategory = cat.id
+        log(.start, "切换源分类", "[\(home.sourceName)] \(cat.typeName)")
+        sourceHomeLoading = true
+        let source = selectedSource
+        defer { sourceHomeLoading = false }
+
+        // 普通音乐源分类：优先用该引擎的 category 接口；失败则回退用分类名做关键词搜索
+        var songs: [VodItem] = []
+        if let src = source, let key = src.engineKey,
+           let engine = SpiderManager.shared.getEngine(forKey: key) {
+            if let csp = engine as? NodeSpiderEngine, csp.isSpiderReady {
+                let result = try? csp.callCategoryContent(tid: cat.typeId, pg: 1, extend: cat.typeName)
+                if let list = result?.list, !list.isEmpty {
+                    songs = list
+                }
+            }
+        }
+        if songs.isEmpty {
+            songs = await SpiderManager.shared.searchInMusicSource(
+                source: source ?? homeRecommendedSource(home),
+                keyword: cat.typeName, pg: 1)
+        }
+        if var updated = sourceHome {
+            updated.recommended = songs
+            sourceHome = updated
+        }
+        log(songs.isEmpty ? .error : .success, "源分类加载", "[\(home.sourceName)/\(cat.typeName)] 返回 \(songs.count) 条")
+    }
+
+    /// 源首页数据未带 source 时，用该源自身的 engineKey 构造一个展示条目用于分类回退
+    private func homeRecommendedSource(_ home: SourceHomeData) -> SourceDisplayItem {
+        selectedSource ?? musicSources.first ?? SourceDisplayItem(
+            id: "music_fallback", name: home.sourceName, category: .music,
+            supportsHome: true, api: nil, searchUrl: nil, engineKey: nil,
+            referer: nil, siteKey: home.sourceName)
+    }
+
+    /// 加载普通音乐源的首页数据（分类 + 推荐歌曲）
+    func loadSourceHome() async {
+        guard let source = selectedSource else { return }
+        sourceHomeLoading = true
+        sourceHome = nil
+        defer { sourceHomeLoading = false }
+        let data = await SpiderManager.shared.fetchHomeData(for: source)
+        sourceHome = data
+        if let d = data {
+            log(.success, "源首页加载完成", "[\(source.name)] 分类 \(d.categories.count) 个，推荐歌曲 \(d.recommended.count) 条")
+        } else {
+            log(.error, "源首页加载失败", "[\(source.name)] 未返回首页/分类数据，可尝试搜索")
         }
     }
 
@@ -1662,55 +1883,75 @@ final class MusicViewModel: ObservableObject {
 
     // MARK: - 播放：歌单内单曲
 
-    /// 将歌曲归属平台+当前源解析播放地址；固定源跨平台失败时自动回退到 lx 聚合源（#3）
+    /// 并发竞速解析播放地址（对标歌一刀）：同时打所有候选源，首个命中即取消其余。
     private func resolvePlayFor(_ song: PlaylistSong) async -> MusicQueueItem? {
         let candidates = resolutionCandidates(for: song)
-        log(.start, "解析播放地址", "《\(song.name)》，候选源 \(candidates.count) 个")
+        log(.start, "并发解析播放地址", "《\(song.name)》，候选源 \(candidates.count) 个")
         if candidates.isEmpty {
             log(.error, "无候选播放源", "请先在顶部选择刀源/念心等音乐源")
             return nil
         }
-        for (i, source) in candidates.enumerated() {
-            var vodItem = VodItem(
-                vodId: song.id,
-                vodName: song.name,
-                vodPic: song.coverURL ?? "",
-                engineKey: source.engineKey,
-                musicPlatform: song.platform,
-                lxMusicInfo: song.rawInfo
-            )
-            log(.info, "尝试源 \(i+1)/\(candidates.count)", "[\(source.name)] engine=\(source.engineKey ?? "nil")")
-            let result = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: vodItem)
-            if let url = result.playUrl, !url.isEmpty {
-                log(.success, "解析成功", "[\(source.name)] 返回播放地址 \(url.prefix(60))…")
-                return MusicQueueItem(
-                    from: vodItem,
-                    sourceName: source.name,
-                    engineKey: source.engineKey ?? "",
-                    playURL: url
-                )
-            } else {
-                log(.error, "源 \(source.name) 失败", "未返回播放地址（平台 \(song.platform == "" ? "-" : song.platform) / 归属源 \(result.playFrom ?? "nil")）")
+        let result: (index: Int, item: MusicQueueItem)? = await withTaskGroup(
+            of: (Int, MusicQueueItem?)?.self
+        ) { group in
+            for (i, source) in candidates.enumerated() {
+                group.addTask {
+                    var vodItem = VodItem(
+                        vodId: song.id,
+                        vodName: song.name,
+                        vodPic: song.coverURL ?? "",
+                        engineKey: source.engineKey,
+                        musicPlatform: song.platform,
+                        lxMusicInfo: song.rawInfo
+                    )
+                    let r = await SpiderManager.shared.fetchMusicPlayUrl(source: source, song: vodItem)
+                    guard let url = r.playUrl, !url.isEmpty else { return nil }
+                    let item = MusicQueueItem(
+                        from: vodItem,
+                        sourceName: source.name,
+                        engineKey: source.engineKey ?? "",
+                        playURL: url
+                    )
+                    return (i, item)
+                }
             }
+            var winner: (Int, MusicQueueItem)? = nil
+            for await res in group {
+                if let res = res {
+                    winner = res
+                    group.cancelAll()
+                    break
+                }
+            }
+            return winner
+        }
+        if let winner = result {
+            let source = candidates[winner.index]
+            log(.success, "解析成功", "[\(source.name)] 首个返回播放地址 \(winner.item.playURL.prefix(60))…")
+            return winner.item
         }
         log(.error, "全部候选源均失败", "《\(song.name)》无法解析播放地址")
         return nil
     }
 
-    /// 依歌曲归属平台排列候选播放源：聚合源优先，固定源兜底最后（避免固定源吃不住跨平台 id 就失败）
+    /// 依歌曲归属平台排列候选播放源：并发竞速取首个命中。
+    /// 所有音乐源均可参与（聚合源吃跨平台 id；固定源仅认自身平台），
+    /// 选中源排在前面以提升命中偏好，最终由并发解析 App 首个可用即播。
     private func resolutionCandidates(for song: PlaylistSong) -> [SourceDisplayItem] {
-        let aggregates = musicSources.filter { LXBridgeEngine.lxKeyMap[$0.engineKey ?? ""] != nil }
         var ordered: [SourceDisplayItem] = []
-        if let sel = selectedSource {
-            let selIsAgg = LXBridgeEngine.lxKeyMap[sel.engineKey ?? ""] != nil
-            // 当前源是聚合源，或歌曲无归属平台（可当通用源）→ 优先当前源
-            if selIsAgg || song.platform.isEmpty {
-                ordered.append(sel)
-            }
-        }
-        for a in aggregates where !ordered.contains(where: { $0.id == a.id }) { ordered.append(a) }
+        // 1) 选中源最优先
         if let sel = selectedSource, !ordered.contains(where: { $0.id == sel.id }) {
-            ordered.append(sel)   // 固定源放最后兜底
+            ordered.append(sel)
+        }
+        // 2) 聚合源（刀/念心）次之——吃跨平台 id，可兜住大多歌曲
+        let selID = selectedSource?.id
+        let aggs = musicSources.filter {
+            $0.id != selID && LXBridgeEngine.lxKeyMap[$0.engineKey ?? ""] != nil
+        }
+        ordered.append(contentsOf: aggs)
+        // 3) 其余音乐源兜底（非聚合源仅认自身平台，命中率低但无害）
+        for s in musicSources where !ordered.contains(where: { $0.id == s.id }) {
+            ordered.append(s)
         }
         return ordered
     }

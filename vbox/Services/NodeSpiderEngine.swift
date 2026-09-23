@@ -485,9 +485,27 @@ final class LXBridgeEngine: SpiderEngineProtocol {
                         musicInfo: [String: Any]? = nil, name: String? = nil,
                         singer: String? = nil, albumName: String? = nil) async throws -> String {
         guard NodeRuntimeManager.shared.isLXReady else { throw LXBridgeError.lxNotReady }
-        let sources = (preferSources?.isEmpty == false) ? preferSources! : supportedSources
+        // P1-A9 优化（对标歌一刀）：优先声明的平台，其余支持平台并入并竞速兜底。
+        // 旧逻辑 preferSources 非空时只试声明平台、失败即抛错 → 点击经常无声。
+        // 现改为「声明平台最优先 + 全部平台并发挥首个可用」，大幅提升单首播放成功率。
+        var ordered = preferSources ?? []
+        for s in supportedSources where !ordered.contains(s) { ordered.append(s) }
+        let sources = ordered.isEmpty ? supportedSources : ordered
         guard !sources.isEmpty else { throw LXBridgeError.bridge("该源无可播放平台") }
         let q = quality ?? "320k"
+
+        // 归一化歌曲 id：优先取原始 musicInfo 里的 id/songmid/hash（平台专有字段），
+        // 并去掉可能带上的平台前缀（wy_/tx_/kg_/kw_/mg_）。否则把 "wy_1234" 这类带前缀
+        // 的 id 直接传给插件，会导致 musicUrl 解析失败或误解析到别的平台。
+        var effectiveID = id
+        if let mi = musicInfo {
+            if let v = mi["id"] { effectiveID = "\(v)" }
+            else if let v = mi["songmid"] { effectiveID = "\(v)" }
+            else if let v = mi["hash"] { effectiveID = "\(v)" }
+        }
+        for p in ["wy_", "tx_", "kg_", "kw_", "mg_", "QQ_", "qq_"] where effectiveID.hasPrefix(p) {
+            effectiveID = String(effectiveID.dropFirst(p.count)); break
+        }
 
         // 优先使用原始 musicInfo；否则用散列字段组装一份（保底让插件拿到 name/singer）。
         var info: [String: Any]? = nil
@@ -496,7 +514,7 @@ final class LXBridgeEngine: SpiderEngineProtocol {
                     "singer": mi["singer"] ?? singer ?? "",
                     "albumName": mi["albumName"] ?? albumName ?? ""]
         } else {
-            var mi: [String: Any] = ["id": id]
+            var mi: [String: Any] = ["id": effectiveID]
             if let n = name, !n.isEmpty { mi["name"] = n }
             if let s = singer, !s.isEmpty { mi["singer"] = s }
             if let a = albumName, !a.isEmpty { mi["albumName"] = a }
@@ -516,7 +534,7 @@ final class LXBridgeEngine: SpiderEngineProtocol {
                     let mi = info
                     group.addTask {
                         do {
-                            let r = try await self.tryResolve(s: s, id: id, q: q, info: mi)
+                            let r = try await self.tryResolve(s: s, id: effectiveID, q: q, info: mi)
                             return (s, true, r)
                         } catch {
                             return (s, false, nil)
