@@ -315,7 +315,43 @@ struct PlayerContentResult: Codable {
     let parse: Int?
     let playUrl: String?
     let url: String?
+    /// play 接口可能返回 url 数组（多音质/多线路，酷狗/酷我/网易/QQ 蜘蛛均如此），保留完整列表
+    let urls: [String]?
     let header: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case parse, playUrl, url, urls, header
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        parse = try? c.decode(Int.self, forKey: .parse)
+        playUrl = try? c.decode(String.self, forKey: .playUrl)
+        header = try? c.decode([String: String].self, forKey: .header)
+        // url 兼容字符串与数组两种形态：蜘蛛 play 常返回多线路数组，单独声明 String 会解码失败
+        if let arr = try? c.decode([String].self, forKey: .url) {
+            urls = arr
+            url = arr.first
+        } else if let s = try? c.decode(String.self, forKey: .url) {
+            url = s
+            urls = s.isEmpty ? nil : [s]
+        } else {
+            url = nil
+            urls = nil
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(parse, forKey: .parse)
+        try c.encodeIfPresent(playUrl, forKey: .playUrl)
+        if let urls = urls, !urls.isEmpty {
+            try c.encode(urls, forKey: .url)
+        } else {
+            try c.encodeIfPresent(url, forKey: .url)
+        }
+        try c.encodeIfPresent(header, forKey: .header)
+    }
 }
 
 

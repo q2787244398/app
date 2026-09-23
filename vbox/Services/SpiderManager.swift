@@ -5511,7 +5511,21 @@ globalThis.__JS_SPIDER__ = _spider;
             }
         }
 
-        // 2) 搜索兜底：接口无结果时用条目名（榜单名）在源内搜索
+        // 2) P3-C3+：category 无结果时尝试 detail 展开（歌手/合集/榜单的 detail 返回
+        //    "歌名$id" 占位符串，解析成歌曲列表，如小酷歌手、小狗/小易/小秋歌单榜单、易听歌曲页）
+        if out.isEmpty, !tid.isEmpty {
+            if let csp = engine as? NodeSpiderEngine, csp.isSpiderReady {
+                if let result = try? csp.callDetailContent(ids: tid) {
+                    var list: [VodItem] = []
+                    for sub in (result.list ?? []) {
+                        list.append(contentsOf: Self.expandDetailItem(sub, engineKey: key, sourceName: source.name))
+                    }
+                    if !list.isEmpty { out = list }
+                }
+            }
+        }
+
+        // 3) 搜索兜底：接口无结果时用条目名（榜单名）在源内搜索
         if out.isEmpty, !item.vodName.isEmpty {
             out = await searchInMusicSource(source: source, keyword: item.vodName, pg: 1)
             for i in 0..<out.count {
@@ -5520,6 +5534,34 @@ globalThis.__JS_SPIDER__ = _spider;
         }
 
         return out
+    }
+
+    /// detail 返回的单条目可能是 "歌名$id#歌名$id..." 连接串（歌手/合集/榜单的整组歌曲），
+    /// 拆分成多个可播放歌曲条目；普通单曲或无占位符条目原样返回。
+    private static func expandDetailItem(_ item: VodItem, engineKey: String, sourceName: String) -> [VodItem] {
+        func single() -> VodItem {
+            var it = item
+            it.engineKey = engineKey
+            if it.vodRemarks == nil || it.vodRemarks?.isEmpty == true { it.vodRemarks = sourceName }
+            return it
+        }
+        guard let raw = item.vodPlayUrl, !raw.isEmpty else { return [single()] }
+        let parts = raw.components(separatedBy: "#")
+        let hasMulti = parts.count > 1 || (parts.first?.contains("$") == true)
+        guard hasMulti else { return [single()] }
+
+        var songs: [VodItem] = []
+        for part in parts {
+            let t = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let dollar = t.firstIndex(of: "$") else { continue }
+            let name = String(t[..<dollar]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let id = String(t[t.index(after: dollar)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !id.isEmpty else { continue }
+            songs.append(VodItem(vodId: id, vodName: name, vodPic: item.vodPic,
+                                 vodRemarks: sourceName, vodPlayFrom: item.vodPlayFrom,
+                                 engineKey: engineKey))
+        }
+        return songs.isEmpty ? [single()] : songs
     }
 
     /// 在单个音乐源中搜索（`platform` 非空时仅搜索该子平台，供聚合源平台行使用）
@@ -5656,13 +5698,67 @@ globalThis.__JS_SPIDER__ = _spider;
         }
 
         do {
-            let result = try engine.callDetailContent(ids: song.vodId)
+            let songId = song.vodId
+
+            // 1) 优先直接调 play：歌曲 vodId 已内嵌 song 对象（酷狗/网易/QQ 蜘蛛的 base64 编码）
+            //    或本身就是 rid/href（酷我歌手曲目 / 易听相对路径），play 可直接出直链。
+            if !songId.isEmpty {
+                if let player = try? engine.callPlayerContent(vodId: songId, flag: "play", url: song.vodPlayUrl ?? "") {
+                    if let u = Self.firstPlayableURL(in: player) {
+                        return (u, song.vodRemarks ?? song.engineKey)
+                    }
+                }
+            }
+
+            // 2) 兜底：detail 解析。蜘蛛 detail 常返回 "歌名$编码" 占位符（多首以 # 连接），
+            //    取第一首的编码部分再调 play 二次解析出真实直链（糖豆 cdn_source$http 直接取 http）。
+            let result = try engine.callDetailContent(ids: songId)
             if let item = result.list?.first {
-                return (item.vodPlayUrl, item.vodPlayFrom)
+                let raw = item.vodPlayUrl ?? ""
+                let (direct, encID) = Self.resolvePlayPlaceholder(raw)
+                if let d = direct, !d.isEmpty {
+                    return (d, item.vodPlayFrom)
+                }
+                if let e = encID, !e.isEmpty {
+                    if let player = try? engine.callPlayerContent(vodId: e, flag: "play", url: raw) {
+                        if let u = Self.firstPlayableURL(in: player) {
+                            return (u, item.vodPlayFrom)
+                        }
+                    }
+                }
             }
         } catch {
             print("[SpiderManager] musicDetail[\(source.name)] 失败: \(error)")
         }
         return (nil, nil)
+    }
+
+    /// 从 play 结果中提取第一个可播放的 http(s) 直链（url 支持字符串或数组）
+    private static func firstPlayableURL(in r: PlayerContentResult) -> String? {
+        var candidates: [String] = []
+        if let urls = r.urls { candidates.append(contentsOf: urls) }
+        if let u = r.url, !u.isEmpty { candidates.append(u) }
+        if let p = r.playUrl, !p.isEmpty { candidates.append(p) }
+        for c in candidates {
+            let t = c.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.hasPrefix("http://") || t.hasPrefix("https://") { return t }
+        }
+        return nil
+    }
+
+    /// 解析 detail 的 vod_play_url 占位符：
+    /// - 直接 http(s) → direct
+    /// - "源名$http(s)..."（糖豆 cdn_source$url）→ direct 取 http 部分
+    /// - "歌名$编码 / 歌名$href"（小狗/小易/小秋/酷我/易听）→ 返回编码部分，交由 play 二次解析
+    /// - 多个条目以 "#" 连接时取第一条
+    private static func resolvePlayPlaceholder(_ raw: String) -> (direct: String?, encID: String?) {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return (nil, nil) }
+        if t.hasPrefix("http://") || t.hasPrefix("https://") { return (t, nil) }
+        let first = t.components(separatedBy: "#").first ?? t
+        guard let dollar = first.firstIndex(of: "$") else { return (nil, nil) }
+        let id = String(first[first.index(after: dollar)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if id.hasPrefix("http://") || id.hasPrefix("https://") { return (id, nil) }
+        return (nil, id.isEmpty ? nil : id)
     }
 }

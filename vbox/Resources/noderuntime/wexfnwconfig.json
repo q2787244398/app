@@ -607,15 +607,6 @@
           "filterable": 1
         },
         {
-          "key": "nodejs_musicailunhui",
-          "name": "轮回|舞曲",
-          "type": 3,
-          "enable": true,
-          "searchable": 1,
-          "quickSearch": 1,
-          "filterable": 1
-        },
-        {
           "key": "nodejs_musicaiwy",
           "name": "小易|音乐",
           "type": 3,
@@ -663,24 +654,6 @@
         {
           "key": "nodejs_musicai163",
           "name": "易听|音乐",
-          "type": 3,
-          "enable": true,
-          "searchable": 1,
-          "quickSearch": 1,
-          "filterable": 1
-        },
-        {
-          "key": "nodejs_musicaidaxe",
-          "name": "刀源|音乐",
-          "type": 3,
-          "enable": true,
-          "searchable": 1,
-          "quickSearch": 1,
-          "filterable": 1
-        },
-        {
-          "key": "nodejs_musicainianxin",
-          "name": "念心|音乐",
           "type": 3,
           "enable": true,
           "searchable": 1,
@@ -875,12 +848,21 @@
           "searchable": 1,
           "quickSearch": 1,
           "filterable": 1
+        },
+        {
+          "key": "nodejs_musicailunhui",
+          "name": "轮回|舞曲",
+          "type": 3,
+          "enable": true,
+          "searchable": 1,
+          "quickSearch": 1,
+          "filterable": 1
         }
       ]
     }
   },
   "_meta": {
-    "updatedAt": 1789878570700
+    "updatedAt": 1790160998239
   },
   "pan": {
     "thunder": {
