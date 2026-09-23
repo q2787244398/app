@@ -4717,6 +4717,21 @@ class PlayerState: ObservableObject {
         return nil
     }
     
+    /// 通用：判断字符串是否为"可作为直链交给播放器"的干净 HTTP URL。
+    /// 真实直链不应包含协议元字符（$、# 及全角 ＄／＃），且能被 URL 正常解析。
+    /// 用于在播放前过滤掉源返回的畸形/含分隔符的候选，避免选中后请求 404。
+    private static func isCleanDirectMediaUrl(_ urlString: String) -> Bool {
+        let trimmed = urlString.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        let lower = trimmed.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else { return false }
+        if trimmed.contains("$") || trimmed.contains("#")
+            || trimmed.contains("＄") || trimmed.contains("＃") {
+            return false
+        }
+        return URL(string: trimmed) != nil
+    }
+    
     /// 判断 episode.url 是否是不含 http 的占位符/相对路径，需要调用 playerContent 解析
     /// 保持 http/https 直链的原有播放行为，避免影响 CMS/API/网盘等其他资源
     private func shouldCallPlayerContentForEpisode(_ urlString: String) -> Bool {
@@ -5242,7 +5257,16 @@ class PlayerState: ObservableObject {
             for (index, videoUrl) in urls.enumerated() {
                 log("[PlayerV2] 地址\(index): \(videoUrl.prefix(60))...")
             }
-            let du = urls.first(where: { $0.contains(".m3u8") || $0.contains(".mp4") }) ?? urls.first ?? pu
+            // 通用选择：只在"干净直链"候选中挑选，优先直链媒体（.m3u8/.mp4），
+            // 避免用 contains 子串匹配选中仍含 $$$/第01集$ 等分隔符的畸形串导致 404。
+            let cleanUrls = urls.filter { Self.isCleanDirectMediaUrl($0) }
+            let du = cleanUrls.first(where: {
+                let lower = $0.lowercased()
+                return lower.contains(".m3u8") || lower.contains(".mp4")
+            })
+                ?? cleanUrls.first
+                ?? urls.first(where: { !$0.contains("$") && !$0.contains("#") })
+                ?? pu
             if !du.isEmpty {
                 if let url = createURL(from: du) {
                     await MainActor.run { initPlayer(url: url, customHeaders: customHeaders) }
@@ -5339,17 +5363,28 @@ class PlayerState: ObservableObject {
     // 保留旧方法供其他地方使用
     private func parsePlayUrls(playFrom: String, playUrl: String) -> [String] {
         var urls: [String] = []
-        if playUrl.contains("#") {
-            for part in playUrl.components(separatedBy: "#") {
-                if let range = part.range(of: "$") {
-                    let u = String(part[range.upperBound...])
+        // macCMS 约定格式：$$$ 分隔线路（部分源用它在"一集"内分隔 播放页/直链 候选），
+        // # 分隔集数，$ 分隔"集名$url"。先按 $$$ 拆，再按 # 拆，最后按 $ 取 url，
+        // 保证每个候选都是独立干净的 URL，避免把 $$$/第01集$ 等畸形串残留进结果。
+        let sourceBlocks = playUrl.components(separatedBy: "$$$")
+        for block in sourceBlocks {
+            let blockTrimmed = block.trimmingCharacters(in: .whitespaces)
+            guard !blockTrimmed.isEmpty else { continue }
+            let pieces = blockTrimmed.contains("#")
+                ? blockTrimmed.components(separatedBy: "#")
+                : [blockTrimmed]
+            for piece in pieces {
+                let p = piece.trimmingCharacters(in: .whitespaces)
+                guard !p.isEmpty else { continue }
+                if let range = p.range(of: "$") {
+                    let u = String(p[range.upperBound...]).trimmingCharacters(in: .whitespaces)
                     if !u.isEmpty { urls.append(u) }
-                } else if !part.isEmpty { urls.append(part) }
+                } else {
+                    urls.append(p)
+                }
             }
-        } else {
-            urls = [playUrl]
         }
-        return urls.filter { !$0.isEmpty }
+        return urls
     }
     
     /// 解析普通资源多集数据，填充通用集数列表 episodeItems

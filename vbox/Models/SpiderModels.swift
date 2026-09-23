@@ -244,6 +244,15 @@ struct VodItem: Codable, Identifiable {
         self.musicEntryType = musicEntryType
     }
 
+    /// 容错解码：兼容 JSON 中字段为字符串或数字（Int/Double）两种情况，取不到返回 nil。
+    /// 用于修复 WEX/秒播等 Node 源将 vod_id/vod_name/vod_pic 返回为数字导致的解码失败。
+    static func decodeString(_ c: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> String? {
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), !s.isEmpty { return s }
+        if let n = try? c.decodeIfPresent(Int.self, forKey: key) { return String(n) }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return String(d) }
+        return nil
+    }
+
     enum CodingKeys: String, CodingKey {
         case vodId = "vod_id"
         case vodName = "vod_name"
@@ -266,9 +275,11 @@ struct VodItem: Codable, Identifiable {
     /// 保证不含新字段的旧 JSON（视频/网盘/远程源）仍可安全解码，不破坏既有链路。
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        vodId = try c.decode(String.self, forKey: .vodId)
-        vodName = try c.decode(String.self, forKey: .vodName)
-        vodPic = try c.decode(String.self, forKey: .vodPic)
+        // 容错：部分 Node/WEX 秒播源将 vod_id/vod_name/vod_pic 返回为数字（Int），vbox 原模型要求 String，
+        // 导致整条 list 解码失败、分类/搜索显示为空。这里统一 String 优先、数字自动转字符串。
+        vodId = Self.decodeString(c, forKey: .vodId) ?? ""
+        vodName = Self.decodeString(c, forKey: .vodName) ?? ""
+        vodPic = Self.decodeString(c, forKey: .vodPic) ?? ""
         vodRemarks = try c.decodeIfPresent(String.self, forKey: .vodRemarks)
         vodYear = try c.decodeIfPresent(String.self, forKey: .vodYear)
         vodArea = try c.decodeIfPresent(String.self, forKey: .vodArea)
