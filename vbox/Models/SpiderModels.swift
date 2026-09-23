@@ -334,6 +334,15 @@ struct PlayerContentResult: Codable {
         case parse, playUrl, url, urls, header
     }
 
+    /// 兼容旧调用点（Node/Python 引擎仍以 4 参构造），urls 缺省时按 url 回填。
+    init(parse: Int?, playUrl: String?, url: String?, urls: [String]? = nil, header: [String: String]?) {
+        self.parse = parse
+        self.playUrl = playUrl
+        self.url = url
+        self.urls = urls ?? url.flatMap { $0.isEmpty ? nil : [$0] }
+        self.header = header
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         parse = try? c.decode(Int.self, forKey: .parse)
