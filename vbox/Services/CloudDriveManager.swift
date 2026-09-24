@@ -10334,10 +10334,10 @@ class CloudDriveManager: ObservableObject {
                     // Node 托管网盘：115/123/139/189/迅雷 由 Node 常驻系统解析（A1 接缝），
                     // 原生路链已废弃；到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
                     throw AuthError.notAuthorized("\(driveType.displayName) 由 Node 常驻系统解析（A1 接缝），原生路链已废弃")
-                case .guangya, .woniu4k:
-                    // 光鸭/蜗牛由 Node 常驻系统解析（A1 接缝），原生链路不参与；
+                case .guangya, .woniu4k, .bilibili:
+                    // 光鸭/蜗牛/B站由 Node 常驻系统解析（A1 接缝），原生链路不参与；
                     // 到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
-                    throw AuthError.notAuthorized("光鸭/蜗牛由 Node 常驻系统解析，请确认 Node 状态")
+                    throw AuthError.notAuthorized("光鸭/蜗牛/B站由 Node 常驻系统解析，请确认 Node 状态")
                 }
                 self.log("[CloudDrive] ✅ \(driveType.displayName) Token \"\(token.name)\" 成功")
                 return result
