@@ -12,6 +12,8 @@ enum RemoteSourceConfigKeys {
     static let lastSyncTime = "remote_default_last_sync_time"
     static let lastSyncError = "remote_default_last_sync_error"
     static let lastSyncAppVersion = "remote_default_last_sync_app_version"
+    static let nodeBundleURL = "remote_node_bundle_url"
+    static let nodeBundleVer = "remote_node_bundle_ver"
 }
 
 /// 远程默认源管理器
@@ -189,6 +191,18 @@ final class RemoteSourceConfigManager: ObservableObject {
             let allSourcesBase = URL(string: manifest.files.allSources)?.deletingLastPathComponent().absoluteString ?? ""
             await downloadAndCacheLXPlugins(sites: spiderSites, baseURL: allSourcesBase)
 
+            // 缓存 Node bundle 远端地址（供启动时 NodeRuntimeManager 自动拉取）
+            if let bundleURL = manifest.files.nodeRuntimeBundle, !bundleURL.isEmpty {
+                UserDefaults.standard.set(bundleURL, forKey: RemoteSourceConfigKeys.nodeBundleURL)
+            } else {
+                UserDefaults.standard.removeObject(forKey: RemoteSourceConfigKeys.nodeBundleURL)
+            }
+            if let bundleVer = manifest.files.nodeRuntimeBundleVer, !bundleVer.isEmpty {
+                UserDefaults.standard.set(bundleVer, forKey: RemoteSourceConfigKeys.nodeBundleVer)
+            } else {
+                UserDefaults.standard.removeObject(forKey: RemoteSourceConfigKeys.nodeBundleVer)
+            }
+
             updateSuccess(version: manifest.configVersion)
             print("[RemoteSource] 同步完成 version=\(manifest.configVersion)")
         } catch {
@@ -292,6 +306,17 @@ final class RemoteSourceConfigManager: ObservableObject {
     /// 供非 MainActor 上下文读取用户可配置的默认 manifest URL。
     /// 与 shared.defaultManifestURL 共用同一个 UserDefaults 键，保证与 @Published 值一致。
     /// 不内置任何默认地址：未配置或留空均返回空串（视为未启用远程源）。
+    /// 读取缓存的 Node bundle 远端地址（供 NodeRuntimeManager 启动时自动拉取）。
+    /// 未配置远程源或 manifest 未下发该字段时返回 nil，NodeRuntimeManager 按原逻辑回退本地资源。
+    nonisolated static func cachedNodeBundleRefreshURL() -> URL? {
+        guard let stored = UserDefaults.standard.string(forKey: RemoteSourceConfigKeys.nodeBundleURL),
+              !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let url = URL(string: stored.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return nil
+        }
+        return url
+    }
+
     nonisolated static func currentDefaultManifestURL() -> String {
         guard let stored = UserDefaults.standard.string(forKey: RemoteSourceConfigKeys.defaultManifestURL) else {
             // 从未配置过，也没有内置默认 → 返回空串
@@ -808,6 +833,8 @@ private struct RemoteSourceManifest: Codable {
 
 private struct RemoteSourceFiles: Codable {
     let allSources: String
+    let nodeRuntimeBundle: String?
+    let nodeRuntimeBundleVer: String?
 }
 
 /// manifest.version 文件结构（约 30 字节）

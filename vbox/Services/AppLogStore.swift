@@ -150,7 +150,7 @@ final class AppLogStore: NSObject, ObservableObject {
     // MARK: - 配置
     
     /// 内存最大条数 (环形缓冲)
-    private let maxMemoryEntries = 5000
+    private let maxMemoryEntries = 10000
     
     /// 持久化保留天数
     private let persistDays = 1

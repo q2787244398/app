@@ -21,7 +21,10 @@ struct VBoxApp: App {
         // [优化7] 启动 Go HTTP/2 代理引擎（夸克播放加速）
         GoProxyManager.shared.start()
         // P1-01: 启动 Node 常驻系统（网盘解析引擎，端口 58080；不影响既有网盘）
-        NodeRuntimeManager.shared.start()
+        // bundle 自动更新：远程源 manifest 若下发 nodeRuntimeBundle 地址，
+        // 启动时自动拉取并校验 MD5，有新版则更新后重启；否则回退本地资源。
+        let bundleRefreshURL = RemoteSourceConfigManager.cachedNodeBundleRefreshURL()
+        NodeRuntimeManager.shared.start(bundleRefreshURL: bundleRefreshURL)
         // 触发数据库初始化（建表 + 数据迁移）
         let _ = DatabaseManager.shared
     }
