@@ -436,6 +436,8 @@
 		NODEC0DE0108 /* NodeLoginViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0207 /* NodeLoginViews.swift */; };
 		NODEC0DE0109 /* NodePanResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0208 /* NodePanResolver.swift */; };
 		NODEC0DE0110 /* NodeSpiderEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0209 /* NodeSpiderEngine.swift */; };
+		NODEC0DE0111 /* BiliAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0302 /* BiliAuthManager.swift */; };
+		NODEC0DE0112 /* BiliQrLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = NODEC0DE0303 /* BiliQrLoginView.swift */; };
 		SU0100000000000000000A001 /* SubtitleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SU0100000000000000000B001 /* SubtitleParser.swift */; };
 		TG0100000000000000000A001 /* TGSearchConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B001 /* TGSearchConfigStore.swift */; };
 		TG0100000000000000000A002 /* TGChannelListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TG0100000000000000000B002 /* TGChannelListView.swift */; };
@@ -889,6 +891,8 @@
 		NODEC0DE0207 /* NodeLoginViews.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeLoginViews.swift; sourceTree = "<group>"; };
 		NODEC0DE0208 /* NodePanResolver.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodePanResolver.swift; sourceTree = "<group>"; };
 		NODEC0DE0209 /* NodeSpiderEngine.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeSpiderEngine.swift; sourceTree = "<group>"; };
+		NODEC0DE0302 /* BiliAuthManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BiliAuthManager.swift; sourceTree = "<group>"; };
+		NODEC0DE0303 /* BiliQrLoginView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BiliQrLoginView.swift; sourceTree = "<group>"; };
 		SU0100000000000000000B001 /* SubtitleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleParser.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B001 /* TGSearchConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGSearchConfigStore.swift; sourceTree = "<group>"; };
 		TG0100000000000000000B002 /* TGChannelListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TGChannelListView.swift; sourceTree = "<group>"; };
@@ -2613,6 +2617,7 @@
 				NODEC0DE0206 /* NodeCredentialSyncService.swift */,
 				NODEC0DE0208 /* NodePanResolver.swift */,
 				NODEC0DE0209 /* NodeSpiderEngine.swift */,
+				NODEC0DE0302 /* BiliAuthManager.swift */,
 				B10132 /* BackupManager.swift */,
 				B10134 /* AudioPlayerManager.swift */,
 				B10204 /* BaiduWebViewBridge.swift */,
@@ -2632,6 +2637,7 @@
 				800C1C8623E553FD6DB513F8 /* LogViewerView.swift */,
 				B10010 /* SettingsViews.swift */,
 				NODEC0DE0207 /* NodeLoginViews.swift */,
+				NODEC0DE0303 /* BiliQrLoginView.swift */,
 				CAFE00000000000000000003 /* RemoteSourceStatusBar.swift */,
 				C1A000000000000000000002 /* CloudDriveSortView.swift */,
 				B10022 /* PlayerSubViews.swift */,
@@ -3093,6 +3099,8 @@
 				NODEC0DE0108 /* NodeLoginViews.swift in Sources */,
 				NODEC0DE0109 /* NodePanResolver.swift in Sources */,
 				NODEC0DE0110 /* NodeSpiderEngine.swift in Sources */,
+				NODEC0DE0111 /* BiliAuthManager.swift in Sources */,
+				NODEC0DE0112 /* BiliQrLoginView.swift in Sources */,
 				E4BAB124DC822C16246A5723 /* GoProxyManager.swift in Sources */,
 				4BAD3ED43EDF4635500AD512 /* GoProxyManager.swift in Sources */,
 				2636A01BFB9E404B9619081E /* GoProxyManager.swift in Sources */,
