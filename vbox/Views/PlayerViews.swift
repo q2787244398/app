@@ -383,12 +383,15 @@ struct VideoDetailView: View {
                     let name = dt?.displayName ?? driveNameFromLink(link.name)
                     return (url: link.url, name: link.name, driveType: dt, driveName: name)
                 }
-                // 2. 夸克网盘拆成双线路：夸克网盘(原画直链) + 备用夸克(普画转码)
+                // 2. 夸克网盘拆成三条线路：夸克网盘(原画直链) + 备用夸克(普画转码) + 夸克Node(Node 独立路链)
                 var splitLinks: [(url: String, name: String, driveType: CloudDriveManager.DriveType?, driveName: String)] = []
                 for link in parsed {
                     splitLinks.append(link)
                     if link.driveType == .quark {
                         splitLinks.append((url: link.url, name: link.name, driveType: link.driveType, driveName: "备用夸克"))
+                        // 夸克Node：原夸克链接 + #vbox_nd=1 标记 → 详情/取链/播放全走 Node（A1 接缝）
+                        let nodeURL = appendQuarkNodeMark(to: link.url)
+                        splitLinks.append((url: nodeURL, name: link.name, driveType: .quarkNode, driveName: "夸克Node"))
                     }
                 }
                 // 3. 按排序顺序排列 rawCloudLinks
@@ -453,6 +456,11 @@ struct VideoDetailView: View {
             let quarkBase = cloudDriveSortManager.displayOrder.firstIndex(of: .quark) ?? 0
             return quarkBase + 1
         }
+        // "夸克Node" 紧跟在 "备用夸克" 后面
+        if driveName == "夸克Node" {
+            let quarkBase = cloudDriveSortManager.displayOrder.firstIndex(of: .quark) ?? 0
+            return quarkBase + 2
+        }
         if let dt, let idx = cloudDriveSortManager.displayOrder.firstIndex(of: dt) {
             return idx
         }
@@ -483,8 +491,8 @@ struct VideoDetailView: View {
         }
         
         switch driveType {
-        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k:
-            // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛）：
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .quarkNode:
+            // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛/夸克Node）：
             // 文件列表走 A1 接缝（Node 常驻系统），失败直接报错，无原生兜底。
             // 必须排在原生分支之前，确保命中 Node 链路。
             return await expandNodeDrive(driveName: driveName, links: links, driveType: driveType)
@@ -773,6 +781,14 @@ struct VideoDetailView: View {
         let payload = params.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }
             .joined(separator: "&")
         return url.contains("#") ? "\(url)&\(payload)" : "\(url)#\(payload)"
+    }
+
+    /// 给夸克链接追加 Node 夸克路链标记（#vbox_nd=1），已带则不重复追加。
+    /// 与既有 #vbox_node=<playID>（详情页指定剧集）可共存：#vbox_nd=1&vbox_node=xxx
+    private func appendQuarkNodeMark(to url: String) -> String {
+        if url.contains("#vbox_nd=1") { return url }
+        if url.contains("#") { return url.replacingOccurrences(of: "#", with: "#vbox_nd=1&", options: [], range: url.range(of: "#")) }
+        return url + "#vbox_nd=1"
     }
 
     private func playPanLink(_ link: CloudPanLink) {

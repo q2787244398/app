@@ -95,16 +95,20 @@ final class NodeCredentialSyncService: NSObject {
         "bilibili": ProviderSpec(nodeProvider: "bili", fields: [
             FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["siteCookie", "bili", "cookie"]),
         ]),
+        "quarkNode": ProviderSpec(nodeProvider: "quark", fields: [
+            FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["pan", "quark", "cookie"]),
+        ]),
     ]
 
     /// pull 方向：bundle GET /website/api/credentials 的 data key → vbox driveType
-    /// 说明：pK0 仅暴露 pan115/pan123/pan189/new139 等条目；
+    /// 说明：pK0 暴露 pan115/pan123/pan189/new139/quark 等条目；
     ///       thunder/guangya/woniu4k 由各自登录路由管理，不走通用读接口，pull 时跳过。
     private static let pullable: [String: String] = [
         "pan115": "one15",
         "pan123": "pan123",
         "pan189": "pan189",
         "new139": "pan139",
+        "quark": "quarkNode",
     ]
 
     /// 自动推送去重（Node 就绪后只推一次，避免重复 PUT）
@@ -181,7 +185,7 @@ final class NodeCredentialSyncService: NSObject {
     /// 与 DriveType.rawValue 如 "115"/"123pan" 不一致，避免映射漏判）。
     func isNodeManaged(_ driveType: CloudDriveManager.DriveType) -> Bool {
         switch driveType {
-        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .bilibili:
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .bilibili, .quarkNode:
             return true
         default:
             return false
@@ -199,6 +203,7 @@ final class NodeCredentialSyncService: NSObject {
         case .guangya: return "guangya"
         case .woniu4k: return "woniu4k"
         case .bilibili: return "bilibili"
+        case .quarkNode: return "quarkNode"
         default: return nil
         }
     }
@@ -470,6 +475,9 @@ final class NodeCredentialSyncService: NSObject {
         case .bilibili:
             primary = credential.cookie
             name = "哔哩-Node"
+        case .quarkNode:
+            primary = credential.cookie
+            name = "夸克Node-Node"
         default:
             return
         }

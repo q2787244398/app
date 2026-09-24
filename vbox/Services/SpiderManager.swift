@@ -5734,7 +5734,7 @@ globalThis.__JS_SPIDER__ = _spider;
     }
 
     /// 从 play 结果中提取第一个可播放的 http(s) 直链（url 支持字符串或数组）
-    static func firstPlayableURL(in r: PlayerContentResult) -> String? {
+    nonisolated static func firstPlayableURL(in r: PlayerContentResult) -> String? {
         var candidates: [String] = []
         if let urls = r.urls { candidates.append(contentsOf: urls) }
         if let u = r.url, !u.isEmpty { candidates.append(u) }

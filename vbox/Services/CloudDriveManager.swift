@@ -63,6 +63,7 @@ class CloudDriveManager: ObservableObject {
     enum DriveType: String, CaseIterable {
         case ali = "ali"
         case quark = "quark"
+        case quarkNode = "quarkNode"
         case baidu = "baidu"
         case one15 = "115"
         case uc = "uc"
@@ -78,6 +79,7 @@ class CloudDriveManager: ObservableObject {
             switch self {
             case .ali: return "阿里云盘"
             case .quark: return "夸克网盘"
+            case .quarkNode: return "夸克Node"
             case .baidu: return "百度网盘"
             case .one15: return "115网盘"
             case .uc: return "UC网盘"
@@ -95,6 +97,7 @@ class CloudDriveManager: ObservableObject {
             switch self {
             case .ali: return "Refresh Token"
             case .quark: return "Cookie"
+            case .quarkNode: return "Cookie"
             case .baidu: return "完整 Cookie / BDUSS+STOKEN"
             case .one15: return "完整 Cookie / CID"
             case .uc: return "Cookie"
@@ -1410,7 +1413,10 @@ class CloudDriveManager: ObservableObject {
 
     static func detectDrive(from url: String) -> DriveType? {
         if url.contains("aliyundrive.com") || url.contains("alipan.com") { return .ali }
-        if url.contains("pan.quark.cn") { return .quark }
+        if url.contains("pan.quark.cn") {
+            // 带 #vbox_nd=1 标记的夸克链接走 Node 夸克路链（与原生夸克互不冲突）
+            return url.contains("#vbox_nd=1") ? .quarkNode : .quark
+        }
         if url.contains("pan.baidu.com") { return .baidu }
         if url.contains("115.com") || url.contains("115cdn.com") { return .one15 }
         if url.contains("uc.cn") || url.contains("ucloud.cn") { return .uc }
@@ -10254,7 +10260,10 @@ class CloudDriveManager: ObservableObject {
         let baseURL = split.baseURL
         let vboxParams = split.params
         self.log("[CloudDrive] resolvePlayURL 输入: \(baseURL.prefix(80))")
-        guard let driveType = Self.detectDrive(from: baseURL) else {
+        // Node 夸克标记位于 fragment（#vbox_nd=1），拆分后会进入 vboxParams 被剥离；
+        // 检测盘别时优先用原始 URL，避免带标记的夸克链接被误判为原生夸克。
+        let detectSource = cleanURL.contains("#vbox_nd=1") ? cleanURL : baseURL
+        guard let driveType = Self.detectDrive(from: detectSource) else {
             self.log("[CloudDrive] ❌ detectDrive 返回 nil")
             throw DriveError.invalidShareURL
         }
@@ -10278,13 +10287,13 @@ class CloudDriveManager: ObservableObject {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ★ Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛 全部走 A1 接缝
+        // ★ Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node 全部走 A1 接缝
         // （Node 常驻系统解析），废弃 vbox 原生路链。解析经
         // /spider/push/4/detail → /spider/push/4/play，错误直接抛给播放端。
         // ═══════════════════════════════════════════════════════════
         if driveType == .one15 || driveType == .pan123 || driveType == .pan139
             || driveType == .pan189 || driveType == .xunlei
-            || driveType == .guangya || driveType == .woniu4k {
+            || driveType == .guangya || driveType == .woniu4k || driveType == .quarkNode {
             self.log("[CloudDrive] 🔄 \(driveType.displayName) 走 A1 接缝（Node 常驻系统）")
             return try await resolveViaNodePan(shareURL: baseURL, driveType: driveType)
         }
@@ -10330,8 +10339,8 @@ class CloudDriveManager: ObservableObject {
                     }
                 case .uc:
                     result = try await resolveUCPlayURL(shareURL: baseURL, cookie: token.value)
-                case .one15, .pan123, .pan139, .pan189, .xunlei:
-                    // Node 托管网盘：115/123/139/189/迅雷 由 Node 常驻系统解析（A1 接缝），
+                case .one15, .pan123, .pan139, .pan189, .xunlei, .quarkNode:
+                    // Node 托管网盘：115/123/139/189/迅雷/夸克Node 由 Node 常驻系统解析（A1 接缝），
                     // 原生路链已废弃；到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
                     throw AuthError.notAuthorized("\(driveType.displayName) 由 Node 常驻系统解析（A1 接缝），原生路链已废弃")
                 case .guangya, .woniu4k, .bilibili:
@@ -10370,12 +10379,12 @@ class CloudDriveManager: ObservableObject {
 
     // MARK: - A1 接缝：Node 托管网盘统一判定与解析（详情页/播放器共用）
 
-    /// Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛。
-    /// 百度/夸克/阿里/UC 不在此列，原生路链与播放链路不受任何影响。
+    /// Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node。
+    /// 百度/夸克(原生)/阿里/UC 不在此列，原生路链与播放链路不受任何影响。
     static func isNodeManagedDrive(_ driveType: DriveType) -> Bool {
         driveType == .one15 || driveType == .pan123 || driveType == .pan139
             || driveType == .pan189 || driveType == .xunlei
-            || driveType == .guangya || driveType == .woniu4k
+            || driveType == .guangya || driveType == .woniu4k || driveType == .quarkNode
     }
 
     /// 解析分享链接 → Node 文件列表（集数），供详情页/播放器展开选集
@@ -10385,7 +10394,11 @@ class CloudDriveManager: ObservableObject {
             self.log("[CloudDrive] ❌ \(driveType.displayName) 需要 Node 常驻系统，但 Node 未就绪")
             throw DriveError.tokenNotConfigured("\(driveType.displayName)（Node 未就绪，请稍后重试）")
         }
-        let share = try await NodePanResolver.shared.resolveShare(shareURL)
+        // 剥离 vbox fragment（#vbox_nd=1 / #vbox_node=…），只把干净分享链接交给 Node，
+        // 避免 fragment 干扰 bundle 对 pan.quark.cn 分享链接的识别。
+        let split = splitVboxFragment(from: shareURL)
+        let clean = split.baseURL
+        let share = try await NodePanResolver.shared.resolveShare(clean)
         self.log("[CloudDrive] ✅ \(driveType.displayName) Node 文件列表: \(share.entries.count) 个文件")
         return share
     }
@@ -10406,6 +10419,7 @@ class CloudDriveManager: ObservableObject {
         case .xunlei: alias = .xunlei
         case .guangya: alias = .guangya
         case .woniu4k: alias = .woniu4k
+        case .quarkNode: alias = .quarkNode
         default: alias = .woniu4k
         }
         let result = PlayResult(
@@ -10468,6 +10482,7 @@ struct PlayResult {
 enum DriveTypeAlias: String {
     case ali = "阿里云盘"
     case quark = "夸克"
+    case quarkNode = "夸克Node"
     case baidu = "百度"
     case one15 = "115"
     case uc = "UC"

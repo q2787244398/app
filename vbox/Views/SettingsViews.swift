@@ -1303,6 +1303,11 @@ struct SettingsView: View {
     private func addDriveToken() {
         guard !driveTokenName.isEmpty, !driveTokenValue.isEmpty else { return }
         cloudDriveManager.addToken(type: selectedDriveType, name: driveTokenName, value: driveTokenValue)
+        // Node 托管盘（115/123/139/189/迅雷/光鸭/蜗牛/B站/夸克Node）手动粘贴后立即推送到 Node，
+        // 否则 Node 侧仍用旧凭据解析（A1 接缝）导致播放失败；原生盘（百度/夸克/阿里/UC）不受影响。
+        if CloudDriveManager.isNodeManagedDrive(selectedDriveType) {
+            Task { await NodeCredentialSyncService.shared.syncNow(direction: .push) }
+        }
         driveTokenName = ""; driveTokenValue = ""
     }
 
@@ -2200,6 +2205,7 @@ struct CloudAuthCenterView: View {
         case .guangya: return "g.circle.fill"
         case .woniu4k: return "s.circle.fill"
         case .bilibili: return "tv.fill"
+        case .quarkNode: return "q.square.fill"
         }
     }
 }
@@ -2481,6 +2487,7 @@ struct CloudPlaybackCacheView: View {
         case .guangya: return "g.circle.fill"
         case .woniu4k: return "s.circle.fill"
         case .bilibili: return "tv.fill"
+        case .quarkNode: return "q.square.fill"
         }
     }
 }

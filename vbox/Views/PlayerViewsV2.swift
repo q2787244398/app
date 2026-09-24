@@ -5329,10 +5329,11 @@ class PlayerState: ObservableObject {
         log("[PlayerV2] 待检测URL: \(playUrlToCheck.prefix(80))")
         if !playUrlToCheck.isEmpty, let driveType = CloudDriveManager.detectDrive(from: playUrlToCheck) {
             log("[PlayerV2] ✅ 检测到 \(driveType.displayName) 网盘链接")
-            // 检查是否配置了Token
+            // 检查是否配置了Token；Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛/夸克Node）
+            // 由 Node 常驻系统解析，不依赖本地 Token，与 handleCloudVideo 的判定保持一致
             let tokens = CloudDriveManager.shared.tokens(for: driveType)
             log("[PlayerV2] \(driveType.displayName) Token数量: \(tokens.count)")
-            if tokens.isEmpty {
+            if tokens.isEmpty && !CloudDriveManager.isNodeManagedDrive(driveType) {
                 let msg = "未配置\(driveType.displayName) Token，请到 设置→网盘播放 中添加"
                 log("[PlayerV2] ❌ \(msg)")
                 await MainActor.run { self.failPlayback(msg) }
