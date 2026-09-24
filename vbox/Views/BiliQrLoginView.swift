@@ -2,161 +2,159 @@
 //  BiliQrLoginView.swift
 //  vbox
 //
-//  B站扫码登录 UI — 授权中心折叠区
-//  照搬 AliyunPgQrLoginView 的结构，改 API 和文案
+//  哔哩哔哩 原生扫码授权 — 整屏 Sheet 样式
+//  样式对齐「阿里云盘原生扫码」(NativeCloudQRLoginView)：
+//  标题 + 大二维码卡片 + 状态卡 + 提示卡 + 生成/重新生成按钮。
+//
+//  ★ 已移除旧的 DisclosureGroup 内联折叠样式。
 //
 
 import SwiftUI
 
 struct BiliQrLoginView: View {
 
-    @StateObject private var authManager = BiliAuthManager.shared
-    @State private var isExpanded = false
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var auth = BiliAuthManager.shared
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            BiliQrCodeSection()
-                .padding(.top, 8)
-        } label: {
-            HStack {
-                Image(systemName: "tv.fill")
-                    .foregroundColor(.pink)
-                Text("B站扫码登录")
-                    .fontWeight(.medium)
-                Spacer()
-                if authManager.qrLoginState == .success {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.caption)
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Text("哔哩哔哩 原生扫码授权")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    qrCard
+                    statusCard
+                    tipCard
+
+                    Button {
+                        Task { await auth.startQrLogin() }
+                    } label: {
+                        Text(auth.qrLoginState.isPolling ? "重新生成二维码" : "生成二维码")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.pink)
+                            .cornerRadius(12)
+                    }
+                    .disabled(auth.qrLoginState == .loading)
                 }
-                Text("bilibili")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                .padding(16)
+            }
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("扫码授权")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                        .foregroundColor(.pink)
+                }
+                if auth.checkLoginStatus() {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("退出登录") {
+                            Task { await auth.clearCookie() }
+                        }
+                        .foregroundColor(.red)
+                    }
+                }
+            }
+            .onDisappear { auth.stopPolling() }
+        }
+    }
+
+    // MARK: - 二维码卡片
+
+    private var qrCard: some View {
+        VStack(spacing: 12) {
+            if let qrImage = auth.qrCodeImage {
+                Image(uiImage: qrImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 220, height: 220)
+                    .padding(12)
+                    .background(Color(uiColor: .systemBackground))
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+            } else if auth.qrLoginState == .loading {
+                ProgressView()
+                    .frame(width: 220, height: 220)
+            } else {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 88))
+                    .foregroundColor(.gray.opacity(0.45))
+                    .frame(width: 220, height: 220)
             }
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Color.gray.opacity(0.05)))
     }
-}
 
-// MARK: - 扫码区
+    // MARK: - 状态卡片
 
-private struct BiliQrCodeSection: View {
-
-    @StateObject private var authManager = BiliAuthManager.shared
-
-    var body: some View {
-        VStack(spacing: 16) {
+    private var statusCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-                Text(authManager.qrLoginState.displayText)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                statusDot
+                Text(auth.qrLoginState.displayText)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
                 Spacer()
-                if authManager.qrLoginState == .success {
+                if auth.qrLoginState == .success {
                     Text("已登录")
-                        .font(.caption)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.green)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.green.opacity(0.1))
-                        .cornerRadius(12)
-                }
-            }
-
-            HStack(spacing: 12) {
-                if authManager.qrLoginState == .waitingScan ||
-                   authManager.qrLoginState == .scanned {
-                    Button(action: { authManager.cancel() }) {
-                        Text("取消")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Color.red.opacity(0.1))
-                            .foregroundColor(.red)
-                            .cornerRadius(8)
-                    }
-                } else {
-                    Button {
-                        Task { await authManager.startQrLogin() }
-                    } label: {
-                        HStack {
-                            Image(systemName: "qrcode.viewfinder")
-                            Text("B站扫码登录")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.pink)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                    }
-                }
-            }
-
-            // 二维码展示
-            if authManager.qrLoginState == .waitingScan ||
-               authManager.qrLoginState == .scanned {
-                if let qrImage = authManager.qrCodeImage {
-                    VStack(spacing: 8) {
-                        Image(uiImage: qrImage)
-                            .interpolation(.none)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 200, height: 200)
-                            .cornerRadius(8)
-                            .shadow(radius: 4)
-                        Text("用 B站 App 扫描二维码")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 8)
-                }
-            }
-
-            if authManager.qrLoginState == .loading {
-                ProgressView().scaleEffect(1.2)
-            }
-
-            // 错误提示
-            if case .error(let msg) = authManager.qrLoginState {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.red)
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.red.opacity(0.08))
-                .cornerRadius(8)
-            }
-
-            // 已登录时显示清除按钮
-            if authManager.qrLoginState == .success {
-                Button(role: .destructive) {
-                    Task { await authManager.clearCookie() }
-                } label: {
-                    Text("退出 B站登录")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color.red.opacity(0.08))
-                        .foregroundColor(.red)
+                        .background(Color.green.opacity(0.12))
                         .cornerRadius(8)
                 }
+            }
+            if !auth.message.isEmpty, auth.qrLoginState.isPolling || auth.qrLoginState == .success {
+                Text(auth.message)
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+            }
+            if case .error(let msg) = auth.qrLoginState {
+                Text(msg)
+                    .font(.system(size: 12))
+                    .foregroundColor(.red)
             }
         }
-        .padding(.vertical, 8)
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.05)))
+    }
+
+    private var statusDot: some View {
+        Circle()
+            .fill(statusColor)
+            .frame(width: 8, height: 8)
     }
 
     private var statusColor: Color {
-        switch authManager.qrLoginState {
+        switch auth.qrLoginState {
         case .idle: return .gray
         case .loading: return .orange
         case .waitingScan: return .blue
         case .scanned: return .yellow
+        case .saving: return .orange
         case .success: return .green
         case .error: return .red
         }
+    }
+
+    // MARK: - 提示卡片
+
+    private var tipCard: some View {
+        Text("请使用哔哩哔哩 App 扫码并确认。扫码成功后自动回收 Cookie 到授权中心，用于「哔哩|影视」资源播放。")
+            .font(.system(size: 12))
+            .foregroundColor(.gray)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.pink.opacity(0.08)))
     }
 }
