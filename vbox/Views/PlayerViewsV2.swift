@@ -4790,7 +4790,15 @@ class PlayerState: ObservableObject {
         ]
         return mediaMarkers.contains { lowerUrl.contains($0) }
     }
-    
+
+    /// 检测 URL 是否为 DASH/MPD 代理地址
+    /// biliys spider 返回的播放 URL 含 /proxy/mpd/，Node.js 返回 application/dash+xml
+    /// AVPlayer 不支持 DASH，需自动切换到 MPV/VLC/MDK 兼容内核
+    private func isDashProxyUrl(_ urlString: String) -> Bool {
+        let lower = urlString.lowercased()
+        return lower.contains("/proxy/mpd/") || lower.contains("/proxy/seg/")
+    }
+
     /// 统一处理 playerContent 返回结果并播放（含 parse:1 二次解析和 header 透传）
     private func playFromPlayerContentResult(
         _ pr: PlayerContentResult,
@@ -4840,6 +4848,25 @@ class PlayerState: ObservableObject {
         }
         // 🔧 修复: 直链分支也校验协议，自定义协议不传给 AVPlayer
         if let pu = pu, !pu.isEmpty, isStandardPlayScheme(pu), let url = createURL(from: pu) {
+            // ★ DASH 检测: spider 返回 MPD 代理 URL 时，AVPlayer 不支持 DASH，
+            // 自动切换到兼容内核 (MPV/VLC/MDK)
+            if isDashProxyUrl(pu) {
+                log("[PlayerV2] 🔍 检测到 DASH/MPD 代理 URL，切换到兼容内核: \(pu.prefix(60))")
+                await MainActor.run {
+                    guard sessionId == nil || playbackSessionId == sessionId else { return }
+                    self.playbackEngineMode = .compatibility
+                    self.compatibilityHint = "B站 DASH 流"
+                    self.compatibilityURL = url
+                    self.compatibilityHeaders = mergedHeaders
+                    self.compatibilityEngineName = self.preferredCompatibilityEngineName(for: url)
+                    self.currentPiPStrategy = self.compatibilityPiPStrategy(
+                        engineName: self.compatibilityEngineName,
+                        url: url
+                    )
+                }
+                return
+            }
+
             log("[PlayerV2] ✅ playerContent 直链成功: \(pu.prefix(60))")
             await MainActor.run {
                 guard sessionId == nil || playbackSessionId == sessionId else { return }
@@ -5236,6 +5263,24 @@ class PlayerState: ObservableObject {
                     return
                 }
             } else if let pu = pu, !pu.isEmpty, isStandardPlayScheme(pu), let url = createURL(from: pu) {
+                // ★ DASH 检测: spider 返回 MPD 代理 URL 时，AVPlayer 不支持 DASH
+                if isDashProxyUrl(pu) {
+                    log("[PlayerV2] 🔍 剧集切换检测到 DASH/MPD，切换兼容内核: \(pu.prefix(60))")
+                    await MainActor.run {
+                        guard sessionId == nil || playbackSessionId == sessionId else { return }
+                        self.playbackEngineMode = .compatibility
+                        self.compatibilityHint = "B站 DASH 流"
+                        self.compatibilityURL = url
+                        self.compatibilityHeaders = mergedHeaders
+                        self.compatibilityEngineName = self.preferredCompatibilityEngineName(for: url)
+                        self.currentPiPStrategy = self.compatibilityPiPStrategy(
+                            engineName: self.compatibilityEngineName,
+                            url: url
+                        )
+                    }
+                    return
+                }
+
                 log("[PlayerV2] ✅ playerContent 成功: \(pu.prefix(60))")
                 await MainActor.run {
                     guard sessionId == nil || playbackSessionId == sessionId else { return }

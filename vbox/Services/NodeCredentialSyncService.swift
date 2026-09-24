@@ -92,6 +92,9 @@ final class NodeCredentialSyncService: NSObject {
             FieldMap(nodeField: "password", keychainSlot: "extra:password", dbPath: ["siteCookie", "woniu4k", "password"]),
             FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["siteCookie", "woniu4k", "cookie"]),
         ]),
+        "bilibili": ProviderSpec(nodeProvider: "bili", fields: [
+            FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["siteCookie", "bili", "cookie"]),
+        ]),
     ]
 
     /// pull 方向：bundle GET /website/api/credentials 的 data key → vbox driveType
@@ -178,7 +181,7 @@ final class NodeCredentialSyncService: NSObject {
     /// 与 DriveType.rawValue 如 "115"/"123pan" 不一致，避免映射漏判）。
     func isNodeManaged(_ driveType: CloudDriveManager.DriveType) -> Bool {
         switch driveType {
-        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k:
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .bilibili:
             return true
         default:
             return false

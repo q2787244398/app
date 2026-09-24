@@ -1597,6 +1597,8 @@ struct CloudAuthCenterView: View {
                     providerAccountCard(type: .xunlei, note: "迅雷云盘支持网页登录获取 Cookie，用于后续迅雷云盘资源解析播放。")
                     nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：手机验证码登录后自动回收 Token，解析链路走 A1 接缝。")
                     nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。")
+                    nodeManagedAccountCard(type: .bilibili, note: "B站由 Node 常驻系统托管：扫码登录后自动回收 Cookie，用于哔哩|影视 资源播放。")
+                    BiliQrLoginView()
                     manualTokenFallbackCard
 
                     Text("播放前不会强制检测授权状态；解析失败且像授权失效时才反向标记。手动粘贴入口继续保留为高级兜底。")

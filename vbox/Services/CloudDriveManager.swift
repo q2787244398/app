@@ -72,6 +72,7 @@ class CloudDriveManager: ObservableObject {
         case xunlei = "xunlei"
         case guangya = "guangya"
         case woniu4k = "woniu4k"
+        case bilibili = "bilibili"
 
         var displayName: String {
             switch self {
@@ -86,6 +87,7 @@ class CloudDriveManager: ObservableObject {
             case .xunlei: return "迅雷云盘"
             case .guangya: return "光鸭网盘"
             case .woniu4k: return "蜗牛网盘"
+            case .bilibili: return "哔哩哔哩"
             }
         }
 
@@ -102,6 +104,7 @@ class CloudDriveManager: ObservableObject {
             case .xunlei: return "Cookie / 网页登录"
             case .guangya: return "Token"
             case .woniu4k: return "账号 / 密码"
+            case .bilibili: return "Cookie"
             }
         }
     }

@@ -2455,6 +2455,10 @@ final class CloudDriveAuthManager: ObservableObject {
             // Node 托管：登录态 Cookie 落在 cookie 字段
             return credential.state != .invalid && (credential.cookie?.isEmpty == false)
         }
+        if driveType == .bilibili {
+            // Node 托管：B站 Cookie 落在 cookie 字段（与蜗牛同模式）
+            return credential.state != .invalid && (credential.cookie?.isEmpty == false)
+        }
         return credential.state != .invalid && credential.primarySecret?.isEmpty == false
     }
 
