@@ -203,7 +203,14 @@ final class BiliAuthManager: ObservableObject {
 
                 switch status {
                 case "waiting":
-                    await MainActor.run { self.qrLoginState = .waitingScan; if !msg.isEmpty { self.message = msg } }
+                    // bundle 的 _Ce() 对「等待扫码」和「已扫码待确认」都返回 status:"waiting"，
+                    // 已扫码状态只在 msg 里体现（"已扫码，请在 Bili App 确认"）。
+                    let scanned = msg.contains("已扫码")
+                    let text = msg
+                    await MainActor.run {
+                        self.qrLoginState = scanned ? .scanned : .waitingScan
+                        if !text.isEmpty { self.message = text }
+                    }
                 case "scanned", "confirm", "confirmed":
                     await MainActor.run { self.qrLoginState = .scanned; if !msg.isEmpty { self.message = msg } }
                 case "success":
