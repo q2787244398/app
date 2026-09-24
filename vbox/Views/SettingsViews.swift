@@ -1563,6 +1563,7 @@ struct CloudAuthCenterView: View {
     @State private var ucLoginJustCompleted = false
     @State private var showBaiduNativeQR = false
     @State private var showAliNativeQR = false
+    @State private var showBiliNativeQR = false
     @State private var show123NativeQR = false
     @State private var show115NativeQR = false
     @State private var show139NativeQR = false
@@ -1609,7 +1610,6 @@ struct CloudAuthCenterView: View {
                         AnyView(nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：手机验证码登录后自动回收 Token，解析链路走 A1 接缝。"))
                         AnyView(nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。"))
                         AnyView(nodeManagedAccountCard(type: .bilibili, note: "B站由 Node 常驻系统托管：扫码登录后自动回收 Cookie，用于哔哩|影视 资源播放。"))
-                        AnyView(BiliQrLoginView())
                     }
 
                     AnyView(manualTokenFallbackCard)
@@ -1660,6 +1660,9 @@ struct CloudAuthCenterView: View {
             }
             .sheet(isPresented: $showAliNativeQR) {
                 NativeCloudQRLoginView(driveType: .ali)
+            }
+            .sheet(isPresented: $showBiliNativeQR) {
+                BiliQrLoginView()
             }
             .sheet(isPresented: $show123NativeQR) {
                 NativeCloudQRLoginView(driveType: .pan123)
@@ -2052,6 +2055,10 @@ struct CloudAuthCenterView: View {
                 } else if type == .woniu4k {
                     Button(action: { showWoniu4kLogin = true }) {
                         authButtonLabel("账号登录", icon: "person.text.rectangle")
+                    }
+                } else if type == .bilibili {
+                    Button(action: { showBiliNativeQR = true }) {
+                        authButtonLabel("原生扫码", icon: "qrcode")
                     }
                 }
             }
