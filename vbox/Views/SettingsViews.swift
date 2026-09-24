@@ -1584,22 +1584,35 @@ struct CloudAuthCenterView: View {
         NavigationView {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
-                    nodeRuntimeStatusBanner
-                    baiduAccountCard
-                    quarkAccountCard
-                    providerAccountCard(type: .ali, note: "阿里云盘使用官方网页扫码/登录获取 refresh_token，用于解析播放文件链接。")
-                    AliyunPgQrLoginView()
-                    providerAccountCard(type: .uc, note: "优先使用授权中心保存的 UC Cookie；支持网页登录兜底回收 Cookie。")
-                    providerAccountCard(type: .one15, note: "115 使用官方网页扫码/登录回收完整 Cookie，手动 Cookie 继续保留。")
-                    providerAccountCard(type: .pan123, note: "123云盘支持网页扫码登录回收 Cookie，播放分享链接时自动使用。")
-                    providerAccountCard(type: .pan139, note: "139云盘（移动云盘）支持网页扫码登录回收 Cookie。")
-                    providerAccountCard(type: .pan189, note: "天翼云盘支持账号密码 + 短信验证码登录获取 Cookie，用于解析播放分享链接。")
-                    providerAccountCard(type: .xunlei, note: "迅雷云盘支持网页登录获取 Cookie，用于后续迅雷云盘资源解析播放。")
-                    nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：手机验证码登录后自动回收 Token，解析链路走 A1 接缝。")
-                    nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。")
-                    nodeManagedAccountCard(type: .bilibili, note: "B站由 Node 常驻系统托管：扫码登录后自动回收 Cookie，用于哔哩|影视 资源播放。")
-                    BiliQrLoginView()
-                    manualTokenFallbackCard
+                    AnyView(nodeRuntimeStatusBanner)
+
+                    // ⚠️ 每张卡片用 AnyView 做类型擦除 + 拆成子 VStack。
+                    // 根因：所有卡片塞进一个 ViewBuilder 时，其 content 泛型类型会被
+                    // Swift 以 __swift_instantiateConcreteTypeFromMangledName 做名称解编
+                    // （_gatherGenericParameterCounts 递归），在已经很深的
+                    // AttributeGraph 更新栈上递归过深 → 主线程栈溢出闪退。
+                    // AnyView 把每张卡片的类型压成短名的 AnyView，元组类型显著变浅。
+                    VStack(spacing: 16) {
+                        AnyView(baiduAccountCard)
+                        AnyView(quarkAccountCard)
+                        AnyView(providerAccountCard(type: .ali, note: "阿里云盘使用官方网页扫码/登录获取 refresh_token，用于解析播放文件链接。"))
+                        AnyView(AliyunPgQrLoginView())
+                        AnyView(providerAccountCard(type: .uc, note: "优先使用授权中心保存的 UC Cookie；支持网页登录兜底回收 Cookie。"))
+                        AnyView(providerAccountCard(type: .one15, note: "115 使用官方网页扫码/登录回收完整 Cookie，手动 Cookie 继续保留。"))
+                        AnyView(providerAccountCard(type: .pan123, note: "123云盘支持网页扫码登录回收 Cookie，播放分享链接时自动使用。"))
+                        AnyView(providerAccountCard(type: .pan139, note: "139云盘（移动云盘）支持网页扫码登录回收 Cookie。"))
+                        AnyView(providerAccountCard(type: .pan189, note: "天翼云盘支持账号密码 + 短信验证码登录获取 Cookie，用于解析播放分享链接。"))
+                        AnyView(providerAccountCard(type: .xunlei, note: "迅雷云盘支持网页登录获取 Cookie，用于后续迅雷云盘资源解析播放。"))
+                    }
+
+                    VStack(spacing: 16) {
+                        AnyView(nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：手机验证码登录后自动回收 Token，解析链路走 A1 接缝。"))
+                        AnyView(nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。"))
+                        AnyView(nodeManagedAccountCard(type: .bilibili, note: "B站由 Node 常驻系统托管：扫码登录后自动回收 Cookie，用于哔哩|影视 资源播放。"))
+                        AnyView(BiliQrLoginView())
+                    }
+
+                    AnyView(manualTokenFallbackCard)
 
                     Text("播放前不会强制检测授权状态；解析失败且像授权失效时才反向标记。手动粘贴入口继续保留为高级兜底。")
                         .font(.system(size: 12))
