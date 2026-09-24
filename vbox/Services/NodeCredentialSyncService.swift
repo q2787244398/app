@@ -198,6 +198,7 @@ final class NodeCredentialSyncService: NSObject {
         case .xunlei: return "xunlei"
         case .guangya: return "guangya"
         case .woniu4k: return "woniu4k"
+        case .bilibili: return "bilibili"
         default: return nil
         }
     }
@@ -466,6 +467,9 @@ final class NodeCredentialSyncService: NSObject {
         case .woniu4k:
             primary = credential.cookie
             name = "蜗牛-Node"
+        case .bilibili:
+            primary = credential.cookie
+            name = "哔哩-Node"
         default:
             return
         }
