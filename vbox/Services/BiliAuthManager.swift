@@ -16,7 +16,6 @@ import Foundation
 import SwiftUI
 import UIKit
 import CoreImage
-import CoreImage.CIFilterBuiltins
 
 // MARK: - B站扫码状态
 
@@ -215,12 +214,19 @@ final class BiliAuthManager: ObservableObject {
     // MARK: - 二维码图片生成
 
     private func generateQRImage(from string: String) -> UIImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else {
+            print("[Bili] CIQRCodeGenerator not available")
+            return nil
+        }
+        filter.setValue(Data(string.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let outputImage = filter.outputImage else {
+            print("[Bili] QR outputImage nil, payload may be too long")
+            return nil
+        }
+        let scaled = outputImage.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
         let context = CIContext()
-        let filter = CIQRCodeGenerator()
-        filter.message = Data(string.utf8)
-        filter.scale = 8.0
-        guard let outputImage = filter.outputImage else { return nil }
-        guard let cgImage = context.createCGImage(outputImage, from: outputImage.extent) else { return nil }
+        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
         return UIImage(cgImage: cgImage)
     }
 }
