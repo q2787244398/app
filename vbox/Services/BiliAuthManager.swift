@@ -54,10 +54,12 @@ final class BiliAuthManager: ObservableObject {
     private let session: URLSession
 
     private init() {
+        // 与 AliyunPgAuthManager 保持一致：空 init，不在单例构造期间启动未持有的 Task。
+        // 之前 init 里 `Task { await checkLoginStatus() }` 会在 SwiftUI 视图创建阶段
+        // 触碰 CloudDriveAuthManager，是授权中心打开时闪退的根因。
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         session = URLSession(configuration: config)
-        Task { await checkLoginStatus() }
     }
 
     // MARK: - Node.js baseURL
