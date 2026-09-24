@@ -4815,7 +4815,9 @@ class PlayerState: ObservableObject {
             }
         }
         // 修复: playUrl 为空字符串时回退到 url（JS侧返回 null 时 playUrl 为 nil，空字符串时也需回退）
-        let pu = pr.playUrl.flatMap { $0.isEmpty ? nil : $0 } ?? pr.url
+        // 再修复: node bundle play 返回 [画质名, MPD地址, ...] 成对数组，url 首元素是画质名不是地址；
+        // 需从 urls 数组选取首个 http(s) 真实地址（playUrl 仍保持优先，不影响既有 JS 蜘蛛）
+        let pu = pr.playUrl.flatMap { $0.isEmpty ? nil : $0 } ?? SpiderManager.firstPlayableURL(in: pr)
         var mergedHeaders = baseHeaders ?? [:]
         if let spiderHeaders = pr.header {
             for (key, value) in spiderHeaders where !key.isEmpty {

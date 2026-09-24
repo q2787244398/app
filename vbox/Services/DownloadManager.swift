@@ -215,7 +215,9 @@ final class DownloadManager: ObservableObject {
             if !engineKey.hasPrefix("__fuli_welfare__") {
                 if let pr = await SpiderManager.shared.getPlayerContent(
                     vodId: vodId, flag: "play", url: url, engineKey: engineKey) {
-                    let resolvedUrl = pr.playUrl.flatMap { $0.isEmpty ? nil : $0 } ?? pr.url ?? ""
+                    // 与播放链路一致：playUrl 优先，否则从 urls 数组取首个 http(s) 直链
+                    // （node bundle play 返回 [画质名, MPD地址, ...] 成对数组，url 首元素是画质名不是地址）
+                    let resolvedUrl = pr.playUrl.flatMap { $0.isEmpty ? nil : $0 } ?? SpiderManager.firstPlayableURL(in: pr) ?? ""
                     if !resolvedUrl.isEmpty {
                         let type: DownloadType = resolvedUrl.lowercased().contains("m3u8") ? .m3u8 : .directFile
                         return (resolvedUrl, pr.header ?? [:], type)

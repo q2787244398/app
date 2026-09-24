@@ -9,7 +9,8 @@ import Foundation
 //   - POST /spider/{nodeKey}/3/category     body {tid, pg, extend}
 //   - POST /spider/{nodeKey}/3/detail       body {id, ids}（bundle 统一读 body.id，见下）
 //   - POST /spider/{nodeKey}/3/search       body {wd, pg}
-//   - POST /spider/{nodeKey}/3/player       body {id, ids, flag, url}
+//   - POST /spider/{nodeKey}/3/play         body {id, ids, flag, url}
+//   （kstore bundle 实测注册 /3/play；旧协议 /3/player 404 时自动回退兼容）
 //   （参数与 bundle 蜘蛛协议对位，议题 18.6 已代码实证 ✅）
 //
 // key 映射：vbox 站点 key（nodejs_xxx / csp_xxx）→ Node 系统内蜘蛛 key（xxx），
@@ -34,6 +35,10 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
     private let nodeKey: String
 
     private let session: URLSession
+
+    /// 播放动作名偏好缓存：kstore bundle 实测注册 /spider/{key}/3/play（player 恒 404）。
+    /// 若某蜘蛛/bundle 只注册 player（旧 TVBox 协议），首次 404 后记住并复用，避免每次多一次 404 往返。
+    private var playActionOverride: String?
 
     init(siteKey: String) {
         self.siteKey = siteKey
@@ -134,7 +139,20 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
 
     func callPlayerContent(vodId: String, flag: String, url: String) throws -> PlayerContentResult {
         // 同上：bundle play 读 body.id（Od: String(w.body?.id)，AppV7: String(c.id)）
-        try perform("player", params: ["id": vodId, "ids": vodId, "flag": flag, "url": url])
+        let params: [String: Any] = ["id": vodId, "ids": vodId, "flag": flag, "url": url]
+        // kstore bundle 实测注册的是 /spider/{key}/3/play（/3/player 恒 404）；
+        // 兼容旧 TVBox 协议只注册 player 的蜘蛛/bundle：play 404 时回退 player，并缓存偏好。
+        if let override = playActionOverride {
+            return try perform(override, params: params)
+        }
+        do {
+            let result: PlayerContentResult = try perform("play", params: params)
+            playActionOverride = "play"
+            return result
+        } catch NodeSpiderError.bridge(let message) where message.hasPrefix("HTTP 404") {
+            playActionOverride = "player"
+            return try perform("player", params: params)
+        }
     }
 
     // MARK: - 桥接实现（同步等待，35s 超时兜底）
