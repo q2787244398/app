@@ -2179,6 +2179,7 @@ struct CloudAuthCenterView: View {
         case .xunlei: return "bolt.fill"
         case .guangya: return "g.circle.fill"
         case .woniu4k: return "s.circle.fill"
+        case .bilibili: return "tv.fill"
         }
     }
 }
@@ -2459,6 +2460,7 @@ struct CloudPlaybackCacheView: View {
         case .xunlei: return "bolt.fill"
         case .guangya: return "g.circle.fill"
         case .woniu4k: return "s.circle.fill"
+        case .bilibili: return "tv.fill"
         }
     }
 }
