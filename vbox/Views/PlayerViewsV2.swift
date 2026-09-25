@@ -1243,6 +1243,30 @@ class PlayerState: ObservableObject {
         return false
     }
 
+    /// Node 托管网盘专用：按真实文件名判断是否需要兼容内核。
+    /// 只认“系统内核明确不支持”的容器/编码，避免仅含 4K 的 MP4 被误判
+    /// （Node 代理 URL 无扩展名，无法像 quark-stream 那样直接由 URL 判定）。
+    private func nodeCompatibilityReason(for fileName: String) -> String? {
+        let lower = fileName.lowercased()
+        let rules: [(String, String)] = [
+            (".mkv", "MKV 封装"),
+            (".flv", "FLV 封装"),
+            (".avi", "AVI 封装"),
+            (".rmvb", "RMVB 封装"),
+            ("hevc", "HEVC/H.265"),
+            ("h265", "HEVC/H.265"),
+            ("x265", "HEVC/H.265"),
+            ("10bit", "10bit 视频"),
+            ("hdr", "HDR 视频"),
+            ("ddp", "DDP/E-AC-3 音轨"),
+            ("eac3", "DDP/E-AC-3 音轨"),
+            ("dts", "DTS 音轨"),
+            ("truehd", "TrueHD 音轨"),
+            ("atmos", "Atmos 音轨")
+        ]
+        return rules.first(where: { lower.contains($0.0) })?.1
+    }
+
     private func compatibilityReason(for fileName: String) -> String? {
         let lower = fileName.lowercased()
         let rules: [(String, String)] = [
@@ -2409,7 +2433,7 @@ class PlayerState: ObservableObject {
         }
     }
 
-    private func playResolvedDriveVideo(_ result: PlayResult) async {
+    private func playResolvedDriveVideo(_ result: PlayResult, resourceNameHint: String? = nil) async {
         if result.driveType == .quark {
             quarkFallbackTimeoutTask?.cancel()
             quarkFallbackAttempted = false
@@ -2417,14 +2441,14 @@ class PlayerState: ObservableObject {
             quarkFallbackHeaders = result.fallbackHeaders
             quarkFallbackSource = result.fallbackSource
             logDrivePlayResult(result)
-            await playDriveVideo(url: result.url, headers: result.headers, driveType: result.driveType)
+            await playDriveVideo(url: result.url, headers: result.headers, driveType: result.driveType, resourceNameHint: resourceNameHint)
         } else {
             quarkFallbackTimeoutTask?.cancel()
             quarkFallbackAttempted = false
             quarkFallbackURL = nil
             quarkFallbackHeaders = nil
             quarkFallbackSource = nil
-            await playDriveVideo(url: result.url, headers: result.headers, driveType: result.driveType)
+            await playDriveVideo(url: result.url, headers: result.headers, driveType: result.driveType, resourceNameHint: resourceNameHint)
         }
     }
 
@@ -3642,7 +3666,8 @@ class PlayerState: ObservableObject {
 
             // 播放选中的文件（A1 接缝 /spider/push/4/play）
             let result = try await CloudDriveManager.shared.resolveNodePlay(playID: entries[selectedIndex].playID, driveType: driveType)
-            await playResolvedDriveVideo(result)
+            // 代理 URL 无扩展名：把真实文件名传给引擎判定，MKV/HEVC 等走兼容内核
+            await playResolvedDriveVideo(result, resourceNameHint: entries[selectedIndex].name)
         } catch {
             let msg = "\(driveType.displayName) Node 解析失败: \(error.localizedDescription)"
             log("[Node] ❌ \(msg)")
@@ -3689,7 +3714,7 @@ class PlayerState: ObservableObject {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
-    private func playDriveVideo(url: String, headers: [String: String], driveType: DriveTypeAlias? = nil) async {
+    private func playDriveVideo(url: String, headers: [String: String], driveType: DriveTypeAlias? = nil, resourceNameHint: String? = nil) async {
         guard !Task.isCancelled else {
             log("[PlayerV2] 已取消的网盘播放任务，跳过播放器提交")
             return
@@ -3779,7 +3804,11 @@ class PlayerState: ObservableObject {
         let isBaiduLocalProxy = urlObj.host == "127.0.0.1" && urlObj.path.contains("baidu-stream")
         let isQuarkLocalProxy = urlObj.host == "127.0.0.1" && urlObj.path.contains("quark-stream")
         let isQuarkM3U8LocalProxy = urlObj.host == "127.0.0.1" && urlObj.path.contains("quark-m3u8")
-        let resourceName = currentPlaybackResourceName(fallbackURL: urlObj, originalURL: url)
+        // Node 常驻系统代理流（/spider/push/4/proxy/<provider>/…）：URL 无扩展名，
+        // 无法从 URL 判断封装，需要结合真实文件名决定内核
+        let isNodePanProxy = urlObj.host == "127.0.0.1" && urlObj.path.contains("/spider/push/")
+        // Node 网盘传入真实文件名后优先用它（代理 URL 的 lastPathComponent 是随机 uuid）
+        let resourceName = resourceNameHint ?? currentPlaybackResourceName(fallbackURL: urlObj, originalURL: url)
         let playlistKind = await probeM3U8IfNeeded(url: urlObj, headers: headers)
         let isUCLocalProxy = urlObj.host == "127.0.0.1" && urlObj.path.contains("uc-stream")
         let isCloudLocalProxy = urlObj.host == "127.0.0.1"
@@ -3888,6 +3917,21 @@ class PlayerState: ObservableObject {
                 compatibilityHint = compatibilityReason(for: resourceName) ?? "复杂封装"
             }
             logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "MPV-MoltenVK", reason: "真实文件名/URL命中复杂封装")
+        } else if enginePreference == .auto, isNodePanProxy, let nodeReason = nodeCompatibilityReason(for: resourceName) {
+            // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛/夸克Node）：
+            // 代理 URL 无扩展名，AVPlayer 无法识别封装会报 -11828/-12847；
+            // 真实文件名命中 MKV/HEVC/HDR/DDP 等复杂封装时强制兼容内核。
+            let nodeEngine = await MainActor.run { () -> String in
+                guard playbackSessionId == sessionId else { return preferredCompatibilityEngineName(for: urlObj) }
+                playbackEngineMode = .compatibility
+                compatibilityHint = nodeReason
+                loadingMessage = "正在使用兼容内核..."
+                let engine = preferredCompatibilityEngineName(for: urlObj)
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: engine, url: urlObj)
+                return engine
+            }
+            logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: nodeEngine, reason: "Node网盘代理命中\(nodeReason)")
+            log("[Node] 真实文件名命中\(nodeReason)，代理 URL 无扩展名，强制兼容内核：\(nodeEngine)")
         } else if enginePreference == .auto {
             logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "AVPlayer", reason: "默认系统内核")
         }
@@ -4015,6 +4059,11 @@ class PlayerState: ObservableObject {
                             return
                         } else if isQuarkLocalProxy {
                             if self.switchToQuarkFallback(reason: "系统内核不支持原画格式") { return }
+                        } else if isNodePanProxy {
+                            // Node 代理流无扩展名：文件名未命中复杂封装规则时仍可能被系统内核拒绝
+                            // （如仅含 4K/高码率、或文件名无编码标记）。兜底自动切兼容内核，避免直接失败。
+                            self.switchNodeAVPlayerFailureToCompatibility(url: urlObj, headers: assetHeaders, reason: "系统内核不支持当前 Node 网盘格式")
+                            return
                         } else {
                             Task { @MainActor in
                                 self.failPlayback("当前资源格式/编码不受系统播放器支持，建议使用兼容内核")
@@ -4470,6 +4519,43 @@ class PlayerState: ObservableObject {
         compatibilityHint = reason
         isPlaying = true
         // 修复: 显式禁用自动锁屏（百度回退兼容内核路径）
+        UIApplication.shared.isIdleTimerDisabled = true
+        isLoading = false
+        isSwitchingEpisode = false
+        loadError = nil
+    }
+
+    /// Node 托管网盘代理流：AVPlayer 明确不支持时的兜底回退。
+    /// 与百度回退同构，但日志打 [Node] 标签，且不清理 quark 兜底线路状态。
+    private func switchNodeAVPlayerFailureToCompatibility(url: URL, headers: [String: String], reason: String) {
+        guard enginePreference == .auto else {
+            log("[Node] 当前为手动系统内核策略，不自动切换兼容内核")
+            return
+        }
+        guard isMPVBuildAvailable || isMDKBuildAvailable || isIJKBuildAvailable || isVLCBuildAvailable else {
+            log("[Node] 当前构建没有可用兼容内核，保留系统内核")
+            return
+        }
+
+        let engineName = preferredCompatibilityEngineName(for: url)
+        log("[Node] AVPlayer 尝试失败，回退兼容内核 \(engineName)：\(reason)")
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+        cleanupObservers()
+        stopPlaybackWatchdog()
+        player?.pause()
+        player = nil
+        compatibilityEngineName = engineName
+        compatibilityURL = url
+        compatibilityHeaders = url.host == "127.0.0.1" ? [:] : headers
+        currentPiPStrategy = compatibilityPiPStrategy(engineName: engineName, url: url)
+        detectVideoQuality(from: url.absoluteString)
+        playbackEngineMode = .compatibility
+        compatibilityHint = reason
+        isPlaying = true
+        // 显式禁用自动锁屏（Node 回退兼容内核路径）
         UIApplication.shared.isIdleTimerDisabled = true
         isLoading = false
         isSwitchingEpisode = false
@@ -6038,7 +6124,8 @@ class PlayerState: ObservableObject {
             await MainActor.run {
                 currentEpisodeIndex = episode.id
             }
-            await playResolvedDriveVideo(result)
+            // 切集同样传真实文件名，保证 MKV/HEVC 等继续走兼容内核
+            await playResolvedDriveVideo(result, resourceNameHint: episode.name)
         } catch {
             log("[Node] \(driveType.displayName) 切集失败: \(error.localizedDescription)")
             await MainActor.run {
