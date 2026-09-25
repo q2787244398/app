@@ -166,9 +166,28 @@ final class NodePanResolver {
             if http.statusCode == 502 || http.statusCode == 503 || http.statusCode == 404 {
                 throw NodePanError.nodeUnavailable
             }
-            throw NodePanError.nodeRejected("HTTP \(http.statusCode)")
+            // bundle handler 抛错时由 Fastify 返回 500 + {message}（如
+            // 「非高会需要配置 UC TV Token」/「还没有配置 UC Cookie」），
+            // 这里读出真实原因，避免只剩「HTTP 500」无法定位。
+            let detail = Self.extractErrorMessage(from: data)
+            throw NodePanError.nodeRejected(detail.isEmpty ? "HTTP \(http.statusCode)" : "\(detail)（HTTP \(http.statusCode)）")
         }
         return data
+    }
+
+    /// 从错误响应体中提取可读信息（Fastify 默认 {statusCode,error,message}；
+    /// bundle 自定义分支为 {code,msg}）；均取不到时退化为截断的原始文本
+    private static func extractErrorMessage(from data: Data) -> String {
+        if let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            for key in ["message", "msg", "error", "errMsg"] {
+                if let text = obj[key] as? String, !text.isEmpty {
+                    return text
+                }
+            }
+        }
+        let raw = (String(data: data, encoding: .utf8) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(raw.prefix(200))
     }
 }
 

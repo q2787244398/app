@@ -967,6 +967,9 @@ class PlayerState: ObservableObject {
     @Published var compatibilityURL: URL?
     @Published var compatibilityHeaders: [String: String] = [:]
     @Published var compatibilityEngineName: String = "VLC"
+    /// 当前兼容播放所属网盘类型，供切换内核重新解析引擎时区分原生 UC / UC网盘Node
+    /// （两者 CDN 直链 URL 完全一致，仅凭 URL 无法区分，会导致切回自动模式时误选 VLC 黑屏）
+    private var compatibilityDriveType: DriveTypeAlias?
     @Published var currentPiPStrategy: PiPStrategy = .system
     @Published var enginePreference: PlaybackEnginePreference = .auto
     @Published var baiduFileList: [BaiduFileItem] = [] // 百度多文件列表
@@ -1160,7 +1163,13 @@ class PlayerState: ObservableObject {
         }
     }
 
-    private func preferredCompatibilityEngineName(for url: URL? = nil) -> String {
+    /// 解析实际使用的兼容内核名
+    /// - Parameters:
+    ///   - url: 目标播放地址
+    ///   - driveType: 网盘类型。仅用于区分「原生 UC」与「UC网盘Node」的 UC 流——
+    ///     两者的 URL 可能完全一样（同为 *.cdn.yun.cn CDN 直链），
+    ///     但内核优先级相反：原生 UC 要 MPV 优先，UC Node 必须 MDK 优先且禁用 MPV。
+    private func preferredCompatibilityEngineName(for url: URL? = nil, driveType: DriveTypeAlias? = nil) -> String {
         switch enginePreference {
         case .mdk:
             return isMDKBuildAvailable ? "MDK" : "VLC"
@@ -1173,6 +1182,26 @@ class PlayerState: ObservableObject {
         case .ali:
             return isAliPlayerBuildAvailable ? "AliPlayer" : (isMPVBuildAvailable ? "MPV-MoltenVK" : "VLC")
         case .auto:
+            // UC 流（CDN 直链 或 本地 uc-stream 代理）必须在通用规则之前按网盘类型分流：
+            // URL 判定无法区分原生 UC 与 UC网盘Node（同为 *.cdn.yun.cn），只能依赖 driveType。
+            if isUCStreamURL(url) {
+                // 原生 UC：与上方 .uc 兼容内核分支的意图一致，MPV → MDK → IJK → VLC。
+                // 早期这里没有 UC 规则，UC 直链会掉到最末尾的 VLC 兜底，
+                // 而 VLC 播 TV Token 原片（4K HDR / Dolby Vision）会「有声音有进度但无画面」。
+                if driveType == .uc {
+                    if isMPVBuildAvailable { return "MPV-MoltenVK" }
+                    if isMDKBuildAvailable { return "MDK" }
+                    if isIJKBuildAvailable { return "IJKPlayer" }
+                    return "VLC"
+                }
+                // UC网盘Node：MDK 优先并排除 MPV-MoltenVK（MPV 在 Node 流上只有声音没画面并闪退）。
+                if driveType == .ucNode {
+                    if isMDKBuildAvailable { return "MDK" }
+                    if isIJKBuildAvailable { return "IJKPlayer" }
+                    if isVLCBuildAvailable { return "VLC" }
+                    if isMPVBuildAvailable { return "MPV-MoltenVK" }
+                }
+            }
             if isMDKBuildAvailable, shouldPreferMDK(for: url) {
                 return "MDK"
             }
@@ -1362,7 +1391,8 @@ class PlayerState: ObservableObject {
                 guard let self else { return }
                 let oldURLString = self.compatibilityURL?.absoluteString ?? ""
                 let engineName = self.preferredCompatibilityEngineName(
-                    for: self.compatibilityURL
+                    for: self.compatibilityURL,
+                    driveType: self.compatibilityDriveType
                 ) ?? "VLC"
 
                 // 第 1 步：清空 compatibilityURL，触发 SwiftUI 拆解旧内核视图（不创建新内核）
@@ -3872,26 +3902,20 @@ class PlayerState: ObservableObject {
             // Node 取链可能返回 UC CDN 直链，落到此处会被强制 MPV-MoltenVK，
             // 在 Node 流上会"只有声音没有画面"并闪退；交由下方 Node 代理流分支（MDK 优先）处理。
             let ucReason = isUCLocalProxy ? "UC网盘本地代理" : "UC网盘直链"
+            // 内核名必须与实际播放用同一个解析函数取得。
+            // 早前这里按 isMPVBuildAvailable 硬编码 "MPV-MoltenVK"，导致日志声称 MPV
+            // 而真正播放的是 preferredCompatibilityEngineName 末尾兜底选中的 VLC，
+            // VLC 播 TV Token 原片（4K HDR / Dolby Vision）会「有声音有进度但无画面」。
+            let ucEngine = preferredCompatibilityEngineName(for: urlObj, driveType: driveType)
             await MainActor.run {
                 guard playbackSessionId == sessionId else { return }
                 playbackEngineMode = .compatibility
                 compatibilityHint = ucReason
-                currentPiPStrategy = compatibilityPiPStrategy(engineName: preferredCompatibilityEngineName(for: urlObj), url: urlObj)
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: ucEngine, url: urlObj)
                 loadingMessage = "正在使用兼容内核..."
             }
-            if isMPVBuildAvailable {
-                logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "MPV-MoltenVK", reason: "UC网盘强制兼容内核：\(ucReason)")
-                log("[UC] 自动模式下UC网盘强制使用 MPV-MoltenVK 兼容内核，不再尝试 AVPlayer")
-            } else if isMDKBuildAvailable {
-                logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "MDK", reason: "UC网盘强制兼容内核（MPV 不可用）：\(ucReason)")
-                log("[UC] MPV 不可用，UC网盘强制降级使用 MDK 兼容内核")
-            } else if isIJKBuildAvailable {
-                logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "IJKPlayer", reason: "UC网盘强制兼容内核（MPV/MDK 不可用）：\(ucReason)")
-                log("[UC] MPV/MDK 不可用，UC网盘降级使用 IJKPlayer")
-            } else if isVLCBuildAvailable {
-                logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "VLC", reason: "UC网盘强制兼容内核（MPV/MDK/IJK 不可用）：\(ucReason)")
-                log("[UC] MPV/MDK/IJK 不可用，UC网盘降级使用 VLC 兼容内核")
-            }
+            logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: ucEngine, reason: "UC网盘强制兼容内核：\(ucReason)")
+            log("[UC] 自动模式下UC网盘强制使用 \(ucEngine) 兼容内核，不再尝试 AVPlayer")
         } else if driveType == .ucNode && enginePreference == .auto
                   && (isUCLocalProxy || isUCPlaybackURL(url))
                   && (isMDKBuildAvailable || isIJKBuildAvailable || isVLCBuildAvailable) {
@@ -3968,7 +3992,7 @@ class PlayerState: ObservableObject {
             // 必须先解析内核名再写 compatibilityHint：否则 hint 里的 "MKV" 会让
             // shouldPreferMPV 反过来命中 MPV-MoltenVK（该内核在这些代理流上
             // 只有声音没有画面，并在 mpv_initialize 阶段闪退）。
-            let nodeEngine = preferredCompatibilityEngineName(for: urlObj)
+            let nodeEngine = preferredCompatibilityEngineName(for: urlObj, driveType: driveType)
             await MainActor.run {
                 guard playbackSessionId == sessionId else { return }
                 playbackEngineMode = .compatibility
@@ -3984,13 +4008,14 @@ class PlayerState: ObservableObject {
         guard await MainActor.run(body: { self.playbackSessionId == sessionId }) else { return }
 
         if shouldUseCompatibilityEngine {
-            let engineName = preferredCompatibilityEngineName(for: urlObj)
+            let engineName = preferredCompatibilityEngineName(for: urlObj, driveType: driveType)
             log("[PlayerV2] 使用 \(engineName) 兼容内核播放：\(compatibilityHint ?? "特殊格式")")
             await MainActor.run {
                 guard playbackSessionId == sessionId else { return }
                 player?.pause()
                 player = nil
                 compatibilityEngineName = engineName
+                compatibilityDriveType = driveType
                 compatibilityURL = urlObj
                 compatibilityHeaders = urlObj.host == "127.0.0.1" ? [:] : headers
                 currentPiPStrategy = compatibilityPiPStrategy(engineName: engineName, url: urlObj)
@@ -4431,6 +4456,13 @@ class PlayerState: ObservableObject {
                && (path.contains("/lt/") || path.contains("/qv/"))
     }
 
+    /// UC 流地址（CDN 直链 或 本地 uc-stream 代理），供内核选择区分 UC 流使用
+    private func isUCStreamURL(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        if url.host == "127.0.0.1" && url.path.contains("uc-stream") { return true }
+        return isUCPlaybackURL(url.absoluteString)
+    }
+
     private func isUCPlaybackURL(_ rawURL: String) -> Bool {
         guard let url = URL(string: rawURL),
               let host = url.host?.lowercased() else { return false }
@@ -4438,6 +4470,10 @@ class PlayerState: ObservableObject {
             let excluded: Set<String> = ["drive.uc.cn", "pc-api.uc.cn", "www.uc.cn"]
             return !excluded.contains(host)
         }
+        // UC TV Token 原片直链走自有 CDN（形如 video-play-p-zb.cdn.yun.cn），
+        // 既非 *.uc.cn 也不含 ucdl/ucloud；漏判会导致 UC 专属内核策略失效
+        // （原生 UC 掉到 VLC 兜底黑屏、UC网盘Node 的 CDN 直链兜底分支不命中）。
+        if host.hasSuffix(".cdn.yun.cn") { return true }
         return host.contains("ucdl") || host.contains("ucloud")
     }
 

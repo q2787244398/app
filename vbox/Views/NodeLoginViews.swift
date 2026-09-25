@@ -500,6 +500,9 @@ struct NodeScanQRLoginView: View {
     let provider: String
     let title: String
     let tip: String
+    /// 登录成功回调。多步登录（如 UC网盘Node 先 Cookie 再 TV Token）传入后，
+    /// 由调用方接管后续步骤，本视图不再自动 dismiss。
+    var onSuccess: (() -> Void)? = nil
 
     @State private var qrImage: UIImage? = nil
     @State private var statusText = "准备生成二维码"
@@ -733,9 +736,13 @@ struct NodeScanQRLoginView: View {
         }
     }
 
-    /// 登录成功：把 Node 侧凭据拉回 Keychain
+    /// 登录成功：把 Node 侧凭据拉回 Keychain；多步登录交由 onSuccess 接管后续步骤
     private func finishSuccess() async {
         _ = await NodeCredentialSyncService.shared.saveProfile()
+        if let onSuccess {
+            onSuccess()
+            return
+        }
         try? await Task.sleep(nanoseconds: 800_000_000)
         dismiss()
     }
@@ -1424,6 +1431,110 @@ struct NodeXunleiSMSLoginView: View {
                 countdownTimer = nil
             }
         }
+    }
+}
+
+// MARK: - UC网盘Node 两步扫码登录（第 1 步 Cookie → 第 2 步 TV Token）
+//
+// UC Node 播放链路对非高会账号要求 Cookie 与 TV Token 同时存在：
+// bundle loadPlayLinks 先 requireCookie（转存、目录、会员判断都依赖 Cookie），
+// 非高会账号再 ensureTvToken 取流。两者由 bundle 两个独立 provider 产生
+// （ucCookie 只写 pan.uc.cookie；ucToken 只写 pan.uc.token + refreshToken），
+// 与原生 UC「先网页扫码拿 Cookie，再授权 TV 拿 Token」完全一致。
+// 这里把两步串成一条流：第 1 步扫码成功即自动切出第 2 步二维码，免去手动切换。
+
+struct NodeUcTwoStepLoginView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Step { case cookie, tv }
+
+    @State private var step: Step = .cookie
+
+    /// 本机是否已有可用 Cookie（上次登录已回拉到 ucNode 凭据）：有则可跳过第 1 步
+    private var hasExistingCookie: Bool {
+        let cookie = CloudDriveAuthManager.shared.credential(for: .ucNode)?.cookie ?? ""
+        return !cookie.isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            stepIndicator
+            switch step {
+            case .cookie:
+                NodeScanQRLoginView(
+                    provider: "ucCookie",
+                    title: "第 1 步 · 扫码获取 Cookie",
+                    tip: "使用 UC 浏览器扫码后确认。Cookie 是基础登录态，转存与目录读取都依赖它。",
+                    onSuccess: { Task { await goToTVStep() } }
+                )
+                .id("ucNode-step-cookie")
+            case .tv:
+                NodeScanQRLoginView(
+                    provider: "ucToken",
+                    title: "第 2 步 · 扫码获取 TV Token",
+                    tip: "再用 UC 浏览器扫码授权 TV。TV Token 供非高会账号取流，与第 1 步的 Cookie 缺一不可。",
+                    onSuccess: { Task { await finish() } }
+                )
+                .id("ucNode-step-tv")
+            }
+        }
+        .background(Color(uiColor: .systemBackground))
+    }
+
+    private var stepIndicator: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                stepChip(index: 1, text: "Cookie", active: step == .cookie, done: step == .tv)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.gray)
+                stepChip(index: 2, text: "TV Token", active: step == .tv, done: false)
+            }
+            Text("UC网盘Node 播放需要 Cookie + TV Token 两项凭据，请按顺序完成两次扫码。")
+                .font(.system(size: 12))
+                .foregroundColor(.gray)
+            if step == .cookie && hasExistingCookie {
+                Button(action: {
+                    Task { await goToTVStep() }
+                }) {
+                    Text("本机已有 Cookie，直接进行第 2 步")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color(hex: "E11D48"))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+
+    private func stepChip(index: Int, text: String, active: Bool, done: Bool) -> some View {
+        let tint: Color = done ? .green : (active ? Color(hex: "E11D48") : .gray)
+        return HStack(spacing: 5) {
+            Image(systemName: done ? "checkmark.circle.fill" : "\(index).circle.fill")
+                .font(.system(size: 13))
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundColor(tint)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(active || done ? tint.opacity(0.1) : Color.clear)
+        )
+    }
+
+    /// 第 1 步完成：短暂停留展示「已完成」后自动切到第 2 步
+    private func goToTVStep() async {
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        step = .tv
+    }
+
+    /// 第 2 步完成：凭据已由 NodeScanQRLoginView 回拉，收尾退出
+    private func finish() async {
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        dismiss()
     }
 }
 

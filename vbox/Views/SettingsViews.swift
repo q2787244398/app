@@ -4002,7 +4002,7 @@ struct NativeCloudQRLoginView: View {
     /// 仅 driveType == .uc 时展示分段控件，其余网盘的原生扫码完全不受影响。
     private enum UCScanMode: String, CaseIterable {
         case native = "原生扫码"
-        case node = "Node扫码"
+        case node = "Node两步登录"
     }
     @State private var ucScanMode: UCScanMode = .native
 
@@ -4010,15 +4010,12 @@ struct NativeCloudQRLoginView: View {
         NavigationView {
             Group {
                 if driveType == .uc && ucScanMode == .node {
-                    // UC网盘Node 扫码：复用通用 Node 扫码组件。
-                    // provider 必须为 bundle createTask 支持的 "ucCookie"（扫码换取 Cookie 主凭据），
-                    // 注意不能用 "uc"——bundle 无该分支，会抛「不支持的扫码登录方式」；
-                    // 登录成功后 Node 侧写入 pan.uc.cookie，由 saveProfile -> pullable["uc"] 拉回 ucNode 独立键。
-                    NodeScanQRLoginView(
-                        provider: "ucCookie",
-                        title: "UC网盘Node 扫码登录",
-                        tip: "使用 UC 浏览器扫码后确认，Cookie 写入 Node 常驻系统（独立于原生 UC 账号）。"
-                    )
+                    // UC网盘Node：两步扫码（第 1 步 ucCookie → 第 2 步 ucToken）。
+                    // 播放链路对非高会账号要求 Cookie 与 TV Token 同时存在，故串成一条流自动切换；
+                    // provider 必须是 bundle createTask 支持的 "ucCookie"/"ucToken"
+                    // （不能用 "uc"——bundle 无该分支，会抛「不支持的扫码登录方式」）。
+                    // 登录成功后由 saveProfile -> pullable["uc"] 拉回 ucNode 独立键。
+                    NodeUcTwoStepLoginView()
                 } else if driveType == .one15 || driveType == .pan123 || driveType == .pan139 || driveType == .pan189 || driveType == .xunlei {
                     VStack(spacing: 0) {
                         if driveType == .one15 {
