@@ -409,7 +409,9 @@ struct CategoryTilesView: View {
             .padding(.vertical, 12)
         }
         .background(settings.usesVisualSkin ? Color.clear : Color(uiColor: .systemBackground))
-        .sheet(item: $selectedCategory) { category in
+        .sheet(item: $selectedCategory, onDismiss: {
+            activeType = nil
+        }) { category in
             CategoryDetailView(categoryType: category.type, categoryName: category.name)
                 .environmentObject(settings)
         }

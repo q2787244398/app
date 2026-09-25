@@ -595,6 +595,16 @@ final class BackupManager {
             result.totalCounts[category] = count
         }
 
+        // 网盘凭据还原后：自动推送到 Node 常驻系统并批量校验，替代手动"首次测试"。
+        // 否则 Node 托管盘读不到还原的凭据、阿里等短期 token 也不会自动刷新，
+        // 导致还原后每个网盘都要先点一次"测试"才能正常使用。
+        if result.restored.contains(.cloudCredentials) {
+            Task { @MainActor in
+                await NodeCredentialSyncService.shared.syncNow(direction: .push)
+                await CloudDriveAuthManager.shared.validateAllCredentials()
+            }
+        }
+
         return result
     }
 

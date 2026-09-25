@@ -359,6 +359,9 @@ struct BackupRestoreSheet: View {
                 if result.restored.contains(.personalSettings) {
                     message += "\n\n提示：部分外观设置将在重启后生效"
                 }
+                if result.restored.contains(.cloudCredentials) {
+                    message += "\n\n网盘凭据已还原并自动同步校验；已失效的账号请在网盘授权中心重新授权"
+                }
                 showAlert(title: "还原完成", message: message)
             } catch {
                 isWorking = false

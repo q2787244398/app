@@ -3154,8 +3154,23 @@ final class CloudDriveAuthManager: ObservableObject {
 
     /// 启动时批量校验所有已保存凭证，将失效凭证标记为 invalid
     func validateAllCredentials() async {
+        await validateCredentials(staleOlderThan: nil)
+    }
+
+    /// 仅校验超过指定间隔未检测的凭据（网盘授权中心出现时兜底，替代手动"测试"）
+    func validateStaleCredentials(olderThan interval: TimeInterval) async {
+        await validateCredentials(staleOlderThan: interval)
+    }
+
+    private func validateCredentials(staleOlderThan: TimeInterval?) async {
+        let now = Date()
         for credential in credentials.values {
             guard let type = CloudDriveManager.DriveType(rawValue: credential.driveType) else { continue }
+            if let interval = staleOlderThan,
+               let checked = credential.lastCheckedAt,
+               now.timeIntervalSince(checked) < interval {
+                continue
+            }
             _ = try? await validateCredential(for: type)
         }
     }

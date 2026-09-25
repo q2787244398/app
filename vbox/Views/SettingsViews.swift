@@ -1644,6 +1644,13 @@ struct CloudAuthCenterView: View {
             .background(Color(uiColor: .systemBackground))
             .navigationTitle("网盘账号授权")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                // 兜底：授权中心出现时，对超过 12 小时未检测的网盘凭据做一次后台校验，
+                // 替代用户还原凭据后手动逐个点"测试"
+                Task {
+                    await authManager.validateStaleCredentials(olderThan: 12 * 3600)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
@@ -2543,8 +2550,10 @@ enum EmbyConfigService {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 15
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // 仅在有 body 时声明 JSON，避免 DELETE/GET 空 body 被 Fastify 判为
+        // "Body cannot be empty when content-type is set to 'application/json'"
         if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
         let (data, response) = try await URLSession.shared.data(for: request)
