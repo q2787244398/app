@@ -1167,8 +1167,8 @@ class PlayerState: ObservableObject {
     /// - Parameters:
     ///   - url: 目标播放地址
     ///   - driveType: 网盘类型。仅用于区分「原生 UC」与「UC网盘Node」的 UC 流——
-    ///     两者的 URL 可能完全一样（同为 *.cdn.yun.cn CDN 直链），
-    ///     但内核优先级相反：原生 UC 要 MPV 优先，UC Node 必须 MDK 优先且禁用 MPV。
+    ///     两者的 URL 可能完全一样（同为 *.cdn.yun.cn CDN 直链），仅凭 URL 无法区分，
+    ///     需靠 driveType 精确命中；两者的内核优先级一致（MDK 优先、排除 MPV）。
     private func preferredCompatibilityEngineName(for url: URL? = nil, driveType: DriveTypeAlias? = nil) -> String {
         switch enginePreference {
         case .mdk:
@@ -1185,17 +1185,14 @@ class PlayerState: ObservableObject {
             // UC 流（CDN 直链 或 本地 uc-stream 代理）必须在通用规则之前按网盘类型分流：
             // URL 判定无法区分原生 UC 与 UC网盘Node（同为 *.cdn.yun.cn），只能依赖 driveType。
             if isUCStreamURL(url) {
-                // 原生 UC：与上方 .uc 兼容内核分支的意图一致，MPV → MDK → IJK → VLC。
-                // 早期这里没有 UC 规则，UC 直链会掉到最末尾的 VLC 兜底，
-                // 而 VLC 播 TV Token 原片（4K HDR / Dolby Vision）会「有声音有进度但无画面」。
-                if driveType == .uc {
-                    if isMPVBuildAvailable { return "MPV-MoltenVK" }
-                    if isMDKBuildAvailable { return "MDK" }
-                    if isIJKBuildAvailable { return "IJKPlayer" }
-                    return "VLC"
-                }
-                // UC网盘Node：MDK 优先并排除 MPV-MoltenVK（MPV 在 Node 流上只有声音没画面并闪退）。
-                if driveType == .ucNode {
+                // 原生 UC 与 UC网盘Node 取到的是同一类 UC CDN 原片直链（4K HDR / Dolby Vision），
+                // 内核优先级必须一致：MDK 优先，并排除 MPV-MoltenVK。
+                // 原因：
+                //   1. MPV-MoltenVK 在这类 UC 流上只有声音没画面，且 mpv_initialize 失败会走
+                //      exit() → 静态析构 SIGSEGV，直接闪退（原生 UC 自动模式曾因此崩到无法播放）；
+                //   2. VLC 兜底播普通资源没问题，但 4K HDR / Dolby Vision 原片会「有声音有进度
+                //      但无画面」（早期 UC 直链落到 VLC 兜底就是这个现象）。
+                if driveType == .uc || driveType == .ucNode {
                     if isMDKBuildAvailable { return "MDK" }
                     if isIJKBuildAvailable { return "IJKPlayer" }
                     if isVLCBuildAvailable { return "VLC" }
@@ -3897,15 +3894,16 @@ class PlayerState: ObservableObject {
                   && driveType != .ucNode {
             // UC网盘资源（直连或本地代理）：一律优先兼容内核，禁止 AVPlayer。
             // 原因：AVPlayer 播放 UC 网盘 CDN 直链时会出现"舞台声"（音频路由异常），
-            // 必须使用 MDK/MPV/IJK 等兼容内核，与百度网盘策略一致。
+            // 必须使用 MDK/IJK 等兼容内核，与百度网盘策略一致。
             // 注意：UC网盘Node（driveType == .ucNode）必须排除在本分支之外——
             // Node 取链可能返回 UC CDN 直链，落到此处会被强制 MPV-MoltenVK，
             // 在 Node 流上会"只有声音没有画面"并闪退；交由下方 Node 代理流分支（MDK 优先）处理。
             let ucReason = isUCLocalProxy ? "UC网盘本地代理" : "UC网盘直链"
-            // 内核名必须与实际播放用同一个解析函数取得。
-            // 早前这里按 isMPVBuildAvailable 硬编码 "MPV-MoltenVK"，导致日志声称 MPV
-            // 而真正播放的是 preferredCompatibilityEngineName 末尾兜底选中的 VLC，
-            // VLC 播 TV Token 原片（4K HDR / Dolby Vision）会「有声音有进度但无画面」。
+            // 内核名必须与实际播放用同一个解析函数取得：
+            // 该函数对 UC 流统一 MDK 优先并排除 MPV-MoltenVK（MPV 在这类 UC 直链上
+            // 只有声音没画面且 mpv_initialize 失败会 exit() → SIGSEGV 闪退）。
+            // 早前这里按 isMPVBuildAvailable 硬编码 "MPV-MoltenVK"，实际却播放 VLC，
+            // 造成日志与实际内核不一致，也掩盖了 VLC 播 4K HDR/Dolby Vision 的黑屏问题。
             let ucEngine = preferredCompatibilityEngineName(for: urlObj, driveType: driveType)
             await MainActor.run {
                 guard playbackSessionId == sessionId else { return }
