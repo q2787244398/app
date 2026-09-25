@@ -105,6 +105,7 @@ struct CloudDriveSortPopup: View {
         case .bilibili: return "tv.fill"
         case .quarkNode: return "q.square"
         case .ucNode: return "u.square"
+        case .baiduNode: return "b.square"
         }
     }
 }

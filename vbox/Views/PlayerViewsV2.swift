@@ -1199,6 +1199,18 @@ class PlayerState: ObservableObject {
                     if isMPVBuildAvailable { return "MPV-MoltenVK" }
                 }
             }
+            // 百度网盘Node（本地 baidu-stream 代理流）：与 UCNode 同策略，MDK 优先并排除
+            // MPV-MoltenVK。原因：Node 流带自定义 UA 鉴权（AVPlayer 无法携带），且
+            // MPV-MoltenVK 在 Node 流上只有声音没有画面并在 mpv_initialize 阶段闪退。
+            // 原生百度（.baidu）不受影响：下方 shouldPreferMPV 对 baidu-stream 返回 true，
+            // 原生百度仍走 MPV 优先的既有逻辑。
+            if let driveType, driveType == .baiduNode,
+               url?.host == "127.0.0.1", url?.path.contains("baidu-stream") == true {
+                if isMDKBuildAvailable { return "MDK" }
+                if isIJKBuildAvailable { return "IJKPlayer" }
+                if isVLCBuildAvailable { return "VLC" }
+                if isMPVBuildAvailable { return "MPV-MoltenVK" }
+            }
             if isMDKBuildAvailable, shouldPreferMDK(for: url) {
                 return "MDK"
             }
@@ -3936,6 +3948,26 @@ class PlayerState: ObservableObject {
             }
             logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: ucNodeEngine, reason: "UC网盘Node 禁止 AVPlayer（MDK 优先，禁用 MPV）：\(ucNodeReason)")
             log("[UCNode] 自动模式下 UC网盘Node 强制兼容内核（MDK 优先，禁用 MPV）：\(ucNodeEngine)")
+        } else if driveType == .baiduNode && enginePreference == .auto
+                  && isBaiduLocalProxy
+                  && (isMDKBuildAvailable || isIJKBuildAvailable || isVLCBuildAvailable) {
+            // 百度网盘Node：Node 取链返回 d.pcs.baidu.com 直链（转存/直链），与原生百度同走本地
+            // baidu-stream 代理。但 Node 流带自定义 UA 鉴权头（AVPlayer 无法携带），且
+            // MPV-MoltenVK 在 Node 流上只有声音没有画面并在 mpv_initialize 阶段闪退，
+            // 故与 UCNode 同策略：强制兼容内核、MDK 优先、排除 MPV-MoltenVK、禁止 AVPlayer。
+            // 注意：原生百度（driveType == .baidu）仍走下方既有分支，行为完全不变。
+            let baiduNodeEngine = isMDKBuildAvailable ? "MDK"
+                : (isIJKBuildAvailable ? "IJKPlayer" : "VLC")
+            let baiduNodeReason = "百度网盘Node本地代理"
+            await MainActor.run {
+                guard playbackSessionId == sessionId else { return }
+                playbackEngineMode = .compatibility
+                compatibilityHint = baiduNodeReason
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: baiduNodeEngine, url: urlObj)
+                loadingMessage = "正在使用兼容内核..."
+            }
+            logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: baiduNodeEngine, reason: "百度网盘Node 禁止 AVPlayer（MDK 优先，禁用 MPV）：\(baiduNodeReason)")
+            log("[BaiduNode] 自动模式下 百度网盘Node 强制兼容内核（MDK 优先，禁用 MPV）：\(baiduNodeEngine)")
         } else if isBaiduLocalProxy && enginePreference == .auto {
             // 百度网盘资源一律优先兼容内核，禁止自动模式再尝试 AVPlayer 主播放链路。
             // 原因：百度本地代理 + 鉴权 + 大文件加载会导致 AVPlayer 启动慢/超时，影响用户播放体验。
@@ -5216,6 +5248,8 @@ class PlayerState: ObservableObject {
         var quarkNodeRoute = false
         // UC 专用：本地无原生 UC Token 时改走 Node UC 独立路链（#vbox_nd=1），两条路链凭据互不影响
         var ucNodeRoute = false
+        // 百度专用：本地无原生百度 Cookie 时改走 Node 百度独立路链（#vbox_nd=1），两条路链凭据互不影响
+        var baiduNodeRoute = false
         switch lower {
         case "quark":
             shareURL = "https://pan.quark.cn/s/\(shareId)"
@@ -5247,6 +5281,9 @@ class PlayerState: ObservableObject {
         case "baidu":
             shareURL = "https://pan.baidu.com/s/1\(shareId)"
             nodeManaged = false
+            // 与夸克/UC 同策略：已配置原生百度 Cookie → 维持现状走原生（vbox_fid）；
+            // 未配置 → 走 Node 百度独立路链（vbox_nd=1&vbox_node），避免只登了 Node 百度的用户播放失败
+            baiduNodeRoute = CloudDriveManager.shared.tokens(for: .baidu).isEmpty
         case "uc":
             shareURL = "https://drive.uc.cn/s/\(shareId)"
             nodeManaged = false
@@ -5265,8 +5302,8 @@ class PlayerState: ObservableObject {
         let encodedPlayID = rawPlayID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? rawPlayID
         let encodedFileID = fileId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? fileId
         let fragment: String
-        if quarkNodeRoute || ucNodeRoute {
-            // 夸克/UC 的 Node 路链：必须带 vbox_nd=1 让 detectDrive 判为 .quarkNode / .ucNode；
+        if quarkNodeRoute || ucNodeRoute || baiduNodeRoute {
+            // 夸克/UC/百度的 Node 路链：必须带 vbox_nd=1 让 detectDrive 判为 .quarkNode / .ucNode / .baiduNode；
             // 有原始 playID 时附 vbox_node 精确定位文件（与详情页派生的 Node 源格式一致）
             fragment = rawPlayID.isEmpty ? "vbox_nd=1" : "vbox_nd=1&vbox_node=\(encodedPlayID)"
         } else if nodeManaged, !rawPlayID.isEmpty {

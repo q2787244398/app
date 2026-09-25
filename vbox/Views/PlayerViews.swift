@@ -399,6 +399,12 @@ struct VideoDetailView: View {
                         let nodeURL = appendNodeMark(to: link.url)
                         splitLinks.append((url: nodeURL, name: link.name, driveType: .ucNode, driveName: "UC网盘Node"))
                     }
+                    if link.driveType == .baidu {
+                        // 百度网盘Node：原百度链接 + #vbox_nd=1 标记 → 详情/取链/播放全走 Node（A1 接缝）
+                        // 原生百度链接不带该标记，因此原生路链不受影响
+                        let nodeURL = appendNodeMark(to: link.url)
+                        splitLinks.append((url: nodeURL, name: link.name, driveType: .baiduNode, driveName: "百度网盘Node"))
+                    }
                 }
                 // 3. 按排序顺序排列 rawCloudLinks
                 let sorted = sortRawCloudLinks(splitLinks)
@@ -472,6 +478,11 @@ struct VideoDetailView: View {
             let ucBase = cloudDriveSortManager.displayOrder.firstIndex(of: .uc) ?? 0
             return ucBase + 1
         }
+        // "百度网盘Node" 紧跟在 "百度网盘" 后面
+        if driveName == "百度网盘Node" {
+            let baiduBase = cloudDriveSortManager.displayOrder.firstIndex(of: .baidu) ?? 0
+            return baiduBase + 1
+        }
         if let dt, let idx = cloudDriveSortManager.displayOrder.firstIndex(of: dt) {
             return idx
         }
@@ -502,8 +513,8 @@ struct VideoDetailView: View {
         }
         
         switch driveType {
-        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .quarkNode, .ucNode:
-            // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛/夸克Node/UC网盘Node）：
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .quarkNode, .ucNode, .baiduNode:
+            // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛/夸克Node/UC网盘Node/百度网盘Node）：
             // 文件列表走 A1 接缝（Node 常驻系统），失败直接报错，无原生兜底。
             // 必须排在原生分支之前，确保命中 Node 链路。
             return await expandNodeDrive(driveName: driveName, links: links, driveType: driveType)

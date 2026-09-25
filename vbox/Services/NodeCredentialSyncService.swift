@@ -104,6 +104,11 @@ final class NodeCredentialSyncService: NSObject {
             FieldMap(nodeField: "token", keychainSlot: "extra:uc_node_tv_token", dbPath: ["pan", "uc", "token"]),
             FieldMap(nodeField: "refreshtoken", keychainSlot: "extra:uc_node_refresh_token", dbPath: ["pan", "uc", "refreshToken"]),
         ]),
+        // 百度网盘Node：独立于原生百度，用独立 keychainSlot（DriveType 凭据按 driveType 隔离）
+        // 与原生 .baidu 的 keychain 完全隔离，避免 Cookie 串味；BDCLND 为临时字段 bundle 现算不入库
+        "baiduNode": ProviderSpec(nodeProvider: "baidu", fields: [
+            FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["pan", "baidu", "cookie"]),
+        ]),
     ]
 
     /// pull 方向：bundle GET /website/api/credentials 的 data key → vbox driveType
@@ -116,6 +121,7 @@ final class NodeCredentialSyncService: NSObject {
         "new139": "pan139",
         "quark": "quarkNode",
         "uc": "ucNode",
+        "baidu": "baiduNode",
     ]
 
     /// 自动推送去重（Node 就绪后只推一次，避免重复 PUT）
@@ -192,7 +198,7 @@ final class NodeCredentialSyncService: NSObject {
     /// 与 DriveType.rawValue 如 "115"/"123pan" 不一致，避免映射漏判）。
     func isNodeManaged(_ driveType: CloudDriveManager.DriveType) -> Bool {
         switch driveType {
-        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .bilibili, .quarkNode, .ucNode:
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .bilibili, .quarkNode, .ucNode, .baiduNode:
             return true
         default:
             return false
@@ -212,6 +218,7 @@ final class NodeCredentialSyncService: NSObject {
         case .bilibili: return "bilibili"
         case .quarkNode: return "quarkNode"
         case .ucNode: return "ucNode"
+        case .baiduNode: return "baiduNode"
         default: return nil
         }
     }
@@ -490,6 +497,9 @@ final class NodeCredentialSyncService: NSObject {
             // 兜底列表只镜像 Cookie 主值（TV Token / Refresh Token 仍全量推送到 Node，仅供展示层不显示）
             primary = credential.cookie
             name = "UC网盘Node-Node"
+        case .baiduNode:
+            primary = credential.cookie
+            name = "百度网盘Node-Node"
         default:
             return
         }

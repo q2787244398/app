@@ -65,6 +65,7 @@ class CloudDriveManager: ObservableObject {
         case quark = "quark"
         case quarkNode = "quarkNode"
         case baidu = "baidu"
+        case baiduNode = "baiduNode"
         case one15 = "115"
         case uc = "uc"
         case ucNode = "ucNode"
@@ -82,6 +83,7 @@ class CloudDriveManager: ObservableObject {
             case .quark: return "夸克网盘"
             case .quarkNode: return "夸克Node"
             case .baidu: return "百度网盘"
+            case .baiduNode: return "百度网盘Node"
             case .one15: return "115网盘"
             case .uc: return "UC网盘"
             case .ucNode: return "UC网盘Node"
@@ -101,6 +103,7 @@ class CloudDriveManager: ObservableObject {
             case .quark: return "Cookie"
             case .quarkNode: return "Cookie"
             case .baidu: return "完整 Cookie / BDUSS+STOKEN"
+            case .baiduNode: return "Cookie / BDUSS+STOKEN"
             case .one15: return "完整 Cookie / CID"
             case .uc: return "Cookie"
             case .ucNode: return "Cookie / TV Token"
@@ -1420,7 +1423,10 @@ class CloudDriveManager: ObservableObject {
             // 带 #vbox_nd=1 标记的夸克链接走 Node 夸克路链（与原生夸克互不冲突）
             return url.contains("#vbox_nd=1") ? .quarkNode : .quark
         }
-        if url.contains("pan.baidu.com") { return .baidu }
+        if url.contains("pan.baidu.com") {
+            // 带 #vbox_nd=1 标记的百度链接走 Node 百度路链（与原生百度互不冲突）
+            return url.contains("#vbox_nd=1") ? .baiduNode : .baidu
+        }
         if url.contains("115.com") || url.contains("115cdn.com") { return .one15 }
         if url.contains("uc.cn") || url.contains("ucloud.cn") {
             // 带 #vbox_nd=1 标记的 UC 链接走 Node UC 路链（与原生 UC 互不冲突）
@@ -10293,14 +10299,14 @@ class CloudDriveManager: ObservableObject {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ★ Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node/UC网盘Node 全部走 A1 接缝
+        // ★ Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node/UC网盘Node/百度网盘Node 全部走 A1 接缝
         // （Node 常驻系统解析），废弃 vbox 原生路链。解析经
         // /spider/push/4/detail → /spider/push/4/play，错误直接抛给播放端。
         // ═══════════════════════════════════════════════════════════
         if driveType == .one15 || driveType == .pan123 || driveType == .pan139
             || driveType == .pan189 || driveType == .xunlei
             || driveType == .guangya || driveType == .woniu4k || driveType == .quarkNode
-            || driveType == .ucNode {
+            || driveType == .ucNode || driveType == .baiduNode {
             self.log("[CloudDrive] 🔄 \(driveType.displayName) 走 A1 接缝（Node 常驻系统）")
             return try await resolveViaNodePan(shareURL: baseURL, driveType: driveType)
         }
@@ -10346,8 +10352,8 @@ class CloudDriveManager: ObservableObject {
                     }
                 case .uc:
                     result = try await resolveUCPlayURL(shareURL: baseURL, cookie: token.value)
-                case .one15, .pan123, .pan139, .pan189, .xunlei, .quarkNode, .ucNode:
-                    // Node 托管网盘：115/123/139/189/迅雷/夸克Node/UC网盘Node 由 Node 常驻系统解析（A1 接缝），
+                case .one15, .pan123, .pan139, .pan189, .xunlei, .quarkNode, .ucNode, .baiduNode:
+                    // Node 托管网盘：115/123/139/189/迅雷/夸克Node/UC网盘Node/百度网盘Node 由 Node 常驻系统解析（A1 接缝），
                     // 原生路链已废弃；到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
                     throw AuthError.notAuthorized("\(driveType.displayName) 由 Node 常驻系统解析（A1 接缝），原生路链已废弃")
                 case .guangya, .woniu4k, .bilibili:
@@ -10386,13 +10392,13 @@ class CloudDriveManager: ObservableObject {
 
     // MARK: - A1 接缝：Node 托管网盘统一判定与解析（详情页/播放器共用）
 
-    /// Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node。
-    /// 百度/夸克(原生)/阿里/UC 不在此列，原生路链与播放链路不受任何影响。
+    /// Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node/UC网盘Node/百度网盘Node。
+    /// 百度(原生)/夸克(原生)/阿里/UC 不在此列，原生路链与播放链路不受任何影响。
     static func isNodeManagedDrive(_ driveType: DriveType) -> Bool {
         driveType == .one15 || driveType == .pan123 || driveType == .pan139
             || driveType == .pan189 || driveType == .xunlei
             || driveType == .guangya || driveType == .woniu4k || driveType == .quarkNode
-            || driveType == .ucNode
+            || driveType == .ucNode || driveType == .baiduNode
     }
 
     /// 解析分享链接 → Node 文件列表（集数），供详情页/播放器展开选集
@@ -10405,10 +10411,44 @@ class CloudDriveManager: ObservableObject {
         // 剥离 vbox fragment（#vbox_nd=1 / #vbox_node=…），只把干净分享链接交给 Node，
         // 避免 fragment 干扰 bundle 对 pan.quark.cn 分享链接的识别。
         let split = splitVboxFragment(from: shareURL)
-        let clean = split.baseURL
+        var clean = split.baseURL
+        // 百度网盘Node：蜘蛛链接可能内联中文访问码标注（如「pan.baidu.com/s/1abc（提取码：defg）」），
+        // bundle 的 jfe 只解析 [?&]pwd= 查询参数，无法识别中文标注；这里统一补全成 ?pwd= 并剥离
+        // 中文尾巴（原生百度路链 extractBaiduPwd 用正则可解析中文标注，不受影响）。
+        // 与 189 天翼 enrichTianyiAccessCode 的输出格式（?pwd=）保持一致。
+        if driveType == .baiduNode {
+            clean = Self.normalizeBaiduAccessCode(clean)
+        }
         let share = try await NodePanResolver.shared.resolveShare(clean)
         self.log("[CloudDrive] ✅ \(driveType.displayName) Node 文件列表: \(share.entries.count) 个文件")
         return share
+    }
+
+    /// 百度网盘访问码补全：蜘蛛链接如「pan.baidu.com/s/1abc（提取码：defg）」内联中文标注时，
+    /// bundle 侧 jfe 只解析 [?&]pwd= 查询参数，无法识别中文标注；这里把中文标注剥离并统一
+    /// 拼成 ?pwd=xxxx（或 &pwd=xxxx），触发 bundle 的 share/verify 校验，否则有密码分享会
+    /// 报「百度分享提取码错误或已失效」。仅作用于 baiduNode 路链，原生百度路链不动。
+    private static func normalizeBaiduAccessCode(_ url: String) -> String {
+        // 已带 pwd 查询参数（?pwd=/&pwd=）则直接返回
+        if url.range(of: #"[?&]pwd=[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil {
+            return url
+        }
+        // 提取中文标注中的访问码（如「提取码：abcd」「（访问码：abcd）」「密码：abcd」）
+        guard let m = url.range(of: #"(访问码|提取码|密码)[:：\s]*([A-Za-z0-9]{4,8})"#, options: .regularExpression) else {
+            return url
+        }
+        let code = String(url[m])
+            .replacingOccurrences(of: #"(访问码|提取码|密码)[:：\s]*"#, with: "", options: .regularExpression)
+        // 剥离中文标注（连同可能包裹它的全角/半角括号）
+        var clean = url
+        if let full = clean.range(of: #"[（(](访问码|提取码|密码)[:：\s]*[A-Za-z0-9]{4,8}[）)]"#, options: .regularExpression) {
+            clean.removeSubrange(full)
+        } else if let seg = clean.range(of: #"(访问码|提取码|密码)[:：\s]*[A-Za-z0-9]{4,8}"#, options: .regularExpression) {
+            clean.removeSubrange(seg)
+        }
+        clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return clean }
+        return clean.contains("?") ? "\(clean)&pwd=\(code)" : "\(clean)?pwd=\(code)"
     }
 
     /// 用 playID 换取播放地址（A1 接缝 /spider/push/4/play），返回带正确盘别标识的 PlayResult
@@ -10429,6 +10469,7 @@ class CloudDriveManager: ObservableObject {
         case .woniu4k: alias = .woniu4k
         case .quarkNode: alias = .quarkNode
         case .ucNode: alias = .ucNode
+        case .baiduNode: alias = .baiduNode
         default: alias = .woniu4k
         }
         let result = PlayResult(
@@ -10496,6 +10537,7 @@ enum DriveTypeAlias: String {
     case one15 = "115"
     case uc = "UC"
     case ucNode = "UC网盘Node"
+    case baiduNode = "百度网盘Node"
     case pan123 = "123云盘"
     case pan139 = "139云盘"
     case pan189 = "天翼云盘"

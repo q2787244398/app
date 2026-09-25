@@ -1259,6 +1259,12 @@ struct SearchView: View {
     @State private var selectedDoubanTab = 0
     @State private var doubanSubjects: [String: [DoubanSubject]] = [:]
     @State private var searchDebugLogs: [String] = []
+    /// 搜索调试日志导出：写临时文件后用系统分享面板导出
+    private struct LogExportFile: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+    @State private var exportLogFile: LogExportFile?
     @State private var searchTask: Task<Void, Never>?
     @State private var doubanLoading = false
     @State private var hasLoadedDefaultData = false
@@ -1371,6 +1377,22 @@ struct SearchView: View {
                         }
                     }
                     .frame(height: 120)
+                    
+                    // 右下角：导出搜索日志
+                    HStack {
+                        Spacer()
+                        Button {
+                            exportSearchLogs()
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .help("导出搜索日志")
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 5)
                 }
                 .frame(maxWidth: .infinity)
                 .background(Color.black.opacity(0.85))
@@ -1378,6 +1400,9 @@ struct SearchView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .transition(.opacity.combined(with: .move(edge: .top)))
+                .sheet(item: $exportLogFile) { file in
+                    ActivityView(activityItems: [file.url])
+                }
             }
             
             ZStack {
@@ -1644,6 +1669,30 @@ struct SearchView: View {
         Task { @MainActor in
             searchDebugLogs.append(msg)
             if searchDebugLogs.count > 500 { searchDebugLogs.removeFirst(searchDebugLogs.count - 500) }
+        }
+    }
+
+    /// 导出搜索调试日志：汇总搜索信息 + 全部日志，写入临时文件后走系统分享面板
+    private func exportSearchLogs() {
+        var lines: [String] = []
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        lines.append("vbox 搜索调试日志")
+        lines.append("导出时间: \(df.string(from: Date()))")
+        lines.append("搜索关键词: \(searchText)")
+        lines.append("结果: \(searchResults.count) 条 / \(Set(searchResults.compactMap { $0.vodRemarks }).count) 源")
+        lines.append("───── 日志（最近 \(searchDebugLogs.count) 条）─────")
+        lines.append(contentsOf: searchDebugLogs)
+        let text = lines.joined(separator: "\n")
+
+        let fileName = "vbox_search_debug_\(Int(Date().timeIntervalSince1970)).txt"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            exportLogFile = LogExportFile(url: url)
+        } catch {
+            // 写临时文件失败时退化为复制到剪贴板，保证日志可导出
+            UIPasteboard.general.string = text
         }
     }
 

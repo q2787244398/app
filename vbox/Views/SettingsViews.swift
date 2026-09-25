@@ -1319,6 +1319,7 @@ struct SettingsView: View {
         case "baidu": return "b.circle.fill"
         case "uc": return "u.circle.fill"
         case "ucNode": return "u.circle.fill"
+        case "baiduNode": return "b.circle.fill"
         case "123pan": return "3.circle.fill"
         case "139pan": return "9.circle.fill"
         default: return "cloud.fill"
@@ -1568,6 +1569,7 @@ struct CloudAuthCenterView: View {
     @State private var showUCTVAuth = false
     @State private var ucLoginJustCompleted = false
     @State private var showBaiduNativeQR = false
+    @State private var showBaiduNodeQR = false
     @State private var showAliNativeQR = false
     @State private var showBiliNativeQR = false
     @State private var show123NativeQR = false
@@ -1603,7 +1605,6 @@ struct CloudAuthCenterView: View {
                         AnyView(baiduAccountCard)
                         AnyView(quarkAccountCard)
                         AnyView(providerAccountCard(type: .ali, note: "阿里云盘使用官方网页扫码/登录获取 refresh_token，用于解析播放文件链接。"))
-                        AnyView(AliyunPgQrLoginView())
                         AnyView(providerAccountCard(type: .uc, note: "优先使用授权中心保存的 UC Cookie；支持原生/Node 双模式扫码登录（点击「原生扫码」页内可切换）；也可使用网页登录兜底。"))
                         AnyView(providerAccountCard(type: .one15, note: "115 使用官方网页扫码/登录回收完整 Cookie，手动 Cookie 继续保留。"))
                         AnyView(providerAccountCard(type: .pan123, note: "123云盘支持网页扫码登录回收 Cookie，播放分享链接时自动使用。"))
@@ -1616,6 +1617,7 @@ struct CloudAuthCenterView: View {
                         AnyView(nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：手机验证码登录后自动回收 Token，解析链路走 A1 接缝。"))
                         AnyView(nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。"))
                         AnyView(nodeManagedAccountCard(type: .bilibili, note: "B站由 Node 常驻系统托管：扫码登录后自动回收 Cookie，用于哔哩|影视 资源播放。"))
+                        AnyView(baiduNodeAccountCard)
                     }
 
                     AnyView(manualTokenFallbackCard)
@@ -1663,6 +1665,22 @@ struct CloudAuthCenterView: View {
             }
             .sheet(isPresented: $showBaiduNativeQR) {
                 NativeCloudQRLoginView(driveType: .baidu)
+            }
+            .sheet(isPresented: $showBaiduNodeQR) {
+                NavigationView {
+                    NodeScanQRLoginView(
+                        provider: "baidu",
+                        title: "百度网盘Node 扫码登录",
+                        tip: "使用百度网盘 App 扫码后确认，Cookie 写入 Node 常驻系统（独立于原生百度账号，两条路链互不影响）。"
+                    )
+                    .navigationTitle("百度网盘Node 扫码登录")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("完成") { showBaiduNodeQR = false }
+                        }
+                    }
+                }
             }
             .sheet(isPresented: $showAliNativeQR) {
                 NativeCloudQRLoginView(driveType: .ali)
@@ -1775,9 +1793,7 @@ struct CloudAuthCenterView: View {
     private var baiduAccountCard: some View {
         let pair = cloudDriveManager.baiduTokenPair()
         let webCookie = pair?.web.value ?? ""
-        let pcsCookie = pair?.pcs?.value ?? ""
         let webStatus = baiduWebStatus(webCookie)
-        let pcsStatus = baiduPCSStatus(pcsCookie)
 
         return VStack(alignment: .leading, spacing: 14) {
             accountHeader(
@@ -1789,7 +1805,6 @@ struct CloudAuthCenterView: View {
 
             VStack(spacing: 8) {
                 authStatusRow(title: "基础登录 Web Cookie", status: webStatus.text, isReady: webStatus.ready)
-                authStatusRow(title: "可选 PCS Cookie", status: pcsStatus.text, isReady: pcsStatus.ready)
             }
 
             Text("百度主账号态按 iBox 路线使用 BDUSS+STOKEN；BDCLND 会在分享验证后动态追加。PCS Cookie 仅作为可选附加缓存，不作为主登录态。")
@@ -1808,6 +1823,28 @@ struct CloudAuthCenterView: View {
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color.gray.opacity(0.06)))
+    }
+
+    private var baiduNodeAccountCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            accountHeader(
+                title: "百度网盘Node",
+                subtitle: authSubtitle(for: .baiduNode, fallback: "未登录"),
+                icon: "b.square.fill",
+                isReady: authManager.isAuthorized(.baiduNode)
+            )
+            Text("百度网盘Node 由 Node 常驻系统托管：使用百度网盘 App 扫码后，Cookie 写入 Node 常驻系统（独立于原生百度账号，两条路链互不影响）。")
+                .font(.system(size: 12))
+                .foregroundColor(.gray)
+            HStack(spacing: 10) {
+                Button(action: { showBaiduNodeQR = true }) {
+                    authButtonLabel("Node扫码登录", icon: "qrcode")
+                }
+            }
+            authDetailLine(for: .baiduNode, fallback: "Node 托管")
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.04)))
     }
 
     private var manualTokenFallbackCard: some View {
@@ -2189,13 +2226,6 @@ struct CloudAuthCenterView: View {
         return ("缺少 BDUSS/STOKEN", false)
     }
 
-    private func baiduPCSStatus(_ cookie: String) -> (text: String, ready: Bool) {
-        let lower = cookie.lowercased()
-        let ready = lower.contains("panpsc=") || lower.contains("ptoken") || lower.contains("ndut_fmt=") || lower.contains("nd_ftid=")
-        if ready { return ("可选 PCS Cookie 已获取", true) }
-        return ("未配置，可忽略", false)
-    }
-
     private func iconForDriveType(_ type: CloudDriveManager.DriveType) -> String {
         switch type {
         case .ali: return "a.circle.fill"
@@ -2212,6 +2242,7 @@ struct CloudAuthCenterView: View {
         case .bilibili: return "tv.fill"
         case .quarkNode: return "q.square.fill"
         case .ucNode: return "u.square.fill"
+        case .baiduNode: return "b.square.fill"
         }
     }
 }
@@ -2495,6 +2526,7 @@ struct CloudPlaybackCacheView: View {
         case .bilibili: return "tv.fill"
         case .quarkNode: return "q.square.fill"
         case .ucNode: return "u.square.fill"
+        case .baiduNode: return "b.square.fill"
         }
     }
 }
