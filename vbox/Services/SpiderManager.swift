@@ -3364,6 +3364,26 @@ globalThis.__JS_SPIDER__ = _spider;
         }
     }
 
+    /// 天翼云盘（cloud.189.cn）访问码补全：
+    /// 链接文本未携带访问码时，从周围上下文提取"访问码/提取码/密码"并拼回链接（?pwd=）。
+    /// Node 路链的 la0 从 URL 文本提取 passCode（yRt），原生 189 路链也从 ?pwd= 读取，
+    /// 缺访问码的有密码分享 shareinfo 请求会返回 HTTP 400（ShareInfoNotFound）。
+    private func enrichTianyiAccessCode(url: String, context: String) -> String {
+        guard url.contains("cloud.189.cn") else { return url }
+        // 链接已携带访问码（中文标注或 pwd/accessCode 参数）则跳过
+        if url.range(of: #"(访问码|提取码|密码|pwd|accessCode)[:：=\s]*[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil {
+            return url
+        }
+        guard let m = context.range(of: #"(访问码|提取码|密码)[:：\s]*([A-Za-z0-9]{4,8})"#, options: .regularExpression) else {
+            return url
+        }
+        let code = String(context[m])
+            .replacingOccurrences(of: #"(访问码|提取码|密码)[:：\s]*"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return url }
+        return url.contains("?") ? "\(url)&pwd=\(code)" : "\(url)?pwd=\(code)"
+    }
+
     /// 从 HTML 中提取所有网盘链接（论坛/详情页通用）
     private func parseCloudLinksFromHTML(html: String, siteName: String, extraPanHosts: [String]? = nil, extraPanNames: [String: String]? = nil) -> [VodItem] {
         var panPatterns: [(pattern: String, driveName: String)] = [
@@ -3372,7 +3392,8 @@ globalThis.__JS_SPIDER__ = _spider;
             (#"(https?://pan\.quark\.cn/s/[^\s\"<>'\\]*)"#, "夸克网盘"),
             (#"(https?://pan\.baidu\.com/s/[^\s\"<>'\\]*)"#, "百度网盘"),
             (#"(https?://(?:drive|pan)\.uc\.cn/s/[^\s\"<>'\\]*)"#, "UC网盘"),
-            (#"(https?://yun\.139\.com/[^\s\"<>'\\]*)"#, "天翼云盘"),
+            (#"(https?://cloud\.189\.cn/[^\s\"<>'\\]*)"#, "天翼云盘"),
+            (#"(https?://yun\.139\.com/[^\s\"<>'\\]*)"#, "139云盘"),
             (#"(https?://www\.123[a-z0-9]+\.com/s/[a-zA-Z0-9\-]+)"#, "123云盘"),
         ]
         // 追加远程配置的额外网盘域名
@@ -3389,7 +3410,17 @@ globalThis.__JS_SPIDER__ = _spider;
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
             for match in regex.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
                 if let r = Range(match.range(at: 1), in: html) {
-                    let panURL = String(html[r])
+                    var panURL = String(html[r])
+                    // 天翼云盘：从链接周围文本补全访问码（?pwd=），否则有密码分享 shareinfo 会 400
+                    if panURL.contains("cloud.189.cn") {
+                        let pos = match.range(at: 1).location
+                        let start = max(0, pos - 800)
+                        let end = min(pos + 200, html.count)
+                        if start < end, let sIdx = html.index(html.startIndex, offsetBy: start, limitedBy: html.endIndex),
+                           let eIdx = html.index(html.startIndex, offsetBy: end, limitedBy: html.endIndex) {
+                            panURL = enrichTianyiAccessCode(url: panURL, context: String(html[sIdx..<eIdx]))
+                        }
+                    }
                     guard seen.insert(panURL).inserted else { continue }
 
                     var name = "\(driveName)-\(siteName)"
@@ -3499,7 +3530,9 @@ globalThis.__JS_SPIDER__ = _spider;
                 guard let title = entry[tField] as? String,
                       let detailURL = entry[uField] as? String else { continue }
                 let fullURL = detailURL.hasPrefix("http") ? detailURL : site.detailBase + detailURL
-                items.append(VodItem(vodId: fullURL, vodName: title, vodPic: "", vodRemarks: site.name))
+                // 天翼云盘：title 常携带"（访问码：xxx）"，拼回链接避免 shareinfo 400
+                let enrichedURL = enrichTianyiAccessCode(url: fullURL, context: title)
+                items.append(VodItem(vodId: enrichedURL, vodName: title, vodPic: "", vodRemarks: site.name))
             }
             log("☁️ \(site.name)(SPA): \(items.count) 条")
             return items
@@ -3761,7 +3794,8 @@ globalThis.__JS_SPIDER__ = _spider;
                             (#"https?://pan\.xunlei\.com/s/[^\s\"<>']+"#, "迅雷网盘"),
                             (#"https?://115cdn\.com/s/[^\s\"<>']+"#, "115网盘"),
                             (#"https?://(?:drive|pan)\.uc\.cn/s/[^\s\"<>']+"#, "UC网盘"),
-                            (#"https?://yun\.139\.com/[^\s\"<>']+"#, "天翼云盘"),
+                            (#"https?://cloud\.189\.cn/[^\s\"<>']+"#, "天翼云盘"),
+                            (#"https?://yun\.139\.com/[^\s\"<>']+"#, "139云盘"),
                             (#"https?://www\.123[a-z0-9]+\.com/s/[a-zA-Z0-9\-]+"#, "123云盘"),
                         ]
 
@@ -3769,7 +3803,9 @@ globalThis.__JS_SPIDER__ = _spider;
                             if let linkRegex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
                                let linkMatch = linkRegex.firstMatch(in: copyText, range: NSRange(copyText.startIndex..., in: copyText)),
                                let linkRange = Range(linkMatch.range, in: copyText) {
-                                let panLink = String(copyText[linkRange])
+                                var panLink = String(copyText[linkRange])
+                                // 天翼云盘：从 copy_text 周围文本补全访问码（?pwd=），避免 shareinfo 400
+                                panLink = enrichTianyiAccessCode(url: panLink, context: copyText)
                                 links.append((url: panLink, name: providerName.isEmpty ? driveName : providerName))
                                 break
                             }
@@ -3799,7 +3835,7 @@ globalThis.__JS_SPIDER__ = _spider;
         let patterns = [
             "pan.quark.cn/s/", "115cdn.com/s/", "aliyundrive.com/s/", "alipan.com/s/",
             "pan.baidu.com/s/", "drive.uc.cn/s/", "pan.uc.cn/s/",
-            "yun.139.com/", "www.123", ".com/s/"
+            "cloud.189.cn/", "yun.139.com/", "www.123", ".com/s/"
         ]
         if patterns.contains(where: { url.contains($0) }) { return true }
         // 检查远程配置的额外网盘域名
@@ -3816,7 +3852,8 @@ globalThis.__JS_SPIDER__ = _spider;
         if url.contains("aliyundrive.com") || url.contains("alipan.com") { return "阿里云盘" }
         if url.contains("pan.baidu.com") { return "百度网盘" }
         if url.contains("drive.uc.cn") || url.contains("pan.uc.cn") { return "UC网盘" }
-        if url.contains("yun.139.com") { return "天翼云盘" }
+        if url.contains("cloud.189.cn") { return "天翼云盘" }
+        if url.contains("yun.139.com") { return "139云盘" }
         if url.contains("www.123") && url.contains("/s/") { return "123云盘" }
         // 检查远程配置的额外网盘域名→名称映射
         if let extra = extraPanNames {
@@ -3889,8 +3926,10 @@ globalThis.__JS_SPIDER__ = _spider;
 
         var cloudLinks: [(url: String, name: String)] = []
         for link in linksArray {
-            guard let url = link["url"], !url.isEmpty else { continue }
+            guard var url = link["url"], !url.isEmpty else { continue }
             let name = link["name"] ?? "网盘资源"
+            // 天翼云盘：name 字段常携带"（访问码：xxx）"，拼回链接避免 shareinfo 400
+            url = enrichTianyiAccessCode(url: url, context: name)
             cloudLinks.append((url: url, name: name))
         }
 
@@ -3932,8 +3971,9 @@ globalThis.__JS_SPIDER__ = _spider;
             (#"(https?://pan\.quark\.cn/s/[^\s\"<>']*)"#, "夸克网盘"),
             (#"(https?://pan\.baidu\.com/s/[^\s\"<>']*)"#, "百度网盘"),
             (#"(https?://(?:drive|pan)\.uc\.cn/s/[^\s\"<>']*)"#, "UC网盘"),
-            (#"(https?://yun\.139\.com/[^\s\"<>']*)"#, "天翼云盘"),
-            (#"(https?://yun\.139\.com/share(?:web|wap)/#/[wm]/i[/?][^\s\"<>']*)"#, "天翼云盘分享"),
+            (#"(https?://cloud\.189\.cn/[^\s\"<>']*)"#, "天翼云盘"),
+            (#"(https?://yun\.139\.com/[^\s\"<>']*)"#, "139云盘"),
+            (#"(https?://yun\.139\.com/share(?:web|wap)/#/[wm]/i[/?][^\s\"<>']*)"#, "139云盘分享"),
             (#"(https?://www\.123[a-z0-9]+\.com/s/[a-zA-Z0-9\-]+)"#, "123云盘"),
         ]
         // 追加远程配置的额外网盘域名
@@ -3953,7 +3993,17 @@ globalThis.__JS_SPIDER__ = _spider;
             let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html))
             for match in matches {
                 if let r = Range(match.range(at: 1), in: html) {
-                    let panURL = String(html[r])
+                    var panURL = String(html[r])
+                    // 天翼云盘：从链接周围文本补全访问码（?pwd=），否则有密码分享 shareinfo 会 400
+                    if panURL.contains("cloud.189.cn") {
+                        let pos = match.range(at: 1).location
+                        let start = Int(max(0, Int(pos) - 400))
+                        let end = min(Int(pos) + 200, html.count)
+                        if start < end, let sIdx = html.index(html.startIndex, offsetBy: start, limitedBy: html.endIndex),
+                           let eIdx = html.index(html.startIndex, offsetBy: end, limitedBy: html.endIndex) {
+                            panURL = enrichTianyiAccessCode(url: panURL, context: String(html[sIdx..<eIdx]))
+                        }
+                    }
                     if !seenURLs.contains(panURL) {
                         seenURLs.insert(panURL)
                         var desc = driveName
