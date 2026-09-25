@@ -2409,8 +2409,8 @@ final class CloudDriveAuthManager: ObservableObject {
                 try await validateCookie(url: "https://cloud.189.cn/", cookie: credential.cookie ?? "", referer: "https://cloud.189.cn/")
             case .xunlei:
                 try await validateCookie(url: "https://pan.xunlei.com/", cookie: credential.cookie ?? "", referer: "https://pan.xunlei.com/")
-            case .guangya, .woniu4k, .bilibili, .quarkNode:
-                // 光鸭/蜗牛/B站/夸克Node 由 Node 常驻系统托管：本地校验核心字段非空即可，
+            case .guangya, .woniu4k, .bilibili, .quarkNode, .ucNode:
+                // 光鸭/蜗牛/B站/夸克Node/UC网盘Node 由 Node 常驻系统托管：本地校验核心字段非空即可，
                 // 真实有效性由 Node 侧解析链路（A1 接缝）运行时判定。
                 try validateNodeManagedCredential(credential, driveType: driveType)
             }
@@ -2655,6 +2655,14 @@ final class CloudDriveAuthManager: ObservableObject {
         case .bilibili:
             guard let cookie = credential.cookie, !cookie.isEmpty else {
                 throw AuthError.notAuthorized("B站未配置 Cookie，请先扫码登录")
+            }
+        case .ucNode:
+            // tokenLabel 为「Cookie / TV Token」：Cookie 主凭据或 Node 侧回拉的 TV Token 任一非空即可，
+            // 避免只拿到 TV Token（bundle ucToken 流程）时误判为未配置。
+            let cookie = credential.cookie ?? ""
+            let tvToken = credential.extra["uc_node_tv_token"] ?? ""
+            guard !cookie.isEmpty || !tvToken.isEmpty else {
+                throw AuthError.notAuthorized("UC网盘Node未配置 Cookie / TV Token，请先扫码登录或粘贴 Token")
             }
         default:
             break

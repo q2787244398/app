@@ -3863,10 +3863,14 @@ class PlayerState: ObservableObject {
                 logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "VLC", reason: "\(proxyType) MDK/MPV/IJK 均不可用")
                 log("[Quark] MDK/MPV/IJK 均不可用，\(proxyType)降级使用 VLC")
             }
-        } else if (isUCLocalProxy || driveType == .uc || isUCPlaybackURL(url)) && enginePreference == .auto {
+        } else if (isUCLocalProxy || driveType == .uc || isUCPlaybackURL(url)) && enginePreference == .auto
+                  && driveType != .ucNode {
             // UC网盘资源（直连或本地代理）：一律优先兼容内核，禁止 AVPlayer。
             // 原因：AVPlayer 播放 UC 网盘 CDN 直链时会出现"舞台声"（音频路由异常），
             // 必须使用 MDK/MPV/IJK 等兼容内核，与百度网盘策略一致。
+            // 注意：UC网盘Node（driveType == .ucNode）必须排除在本分支之外——
+            // Node 取链可能返回 UC CDN 直链，落到此处会被强制 MPV-MoltenVK，
+            // 在 Node 流上会"只有声音没有画面"并闪退；交由下方 Node 代理流分支（MDK 优先）处理。
             let ucReason = isUCLocalProxy ? "UC网盘本地代理" : "UC网盘直链"
             await MainActor.run {
                 guard playbackSessionId == sessionId else { return }
@@ -3888,6 +3892,28 @@ class PlayerState: ObservableObject {
                 logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: "VLC", reason: "UC网盘强制兼容内核（MPV/MDK/IJK 不可用）：\(ucReason)")
                 log("[UC] MPV/MDK/IJK 不可用，UC网盘降级使用 VLC 兼容内核")
             }
+        } else if driveType == .ucNode && enginePreference == .auto
+                  && (isUCLocalProxy || isUCPlaybackURL(url))
+                  && (isMDKBuildAvailable || isIJKBuildAvailable || isVLCBuildAvailable) {
+            // 坑 2 兜底（方案 B，仅作用于 .ucNode）：bundle 的 UC 适配器在 NORMAL/VIP 账号下
+            // 走 getTvStreamingUrl 返回 UC CDN 直链（isUCPlaybackURL(url) == true，且非 127.0.0.1
+            // 代理，故不会命中下方 Node 代理分支）。该直链若落到默认 AVPlayer 会重现原生 UC 的
+            // "舞台声"问题，故与原生 UC 同策略禁止 AVPlayer；但内核优先级必须 MDK 优先且
+            // **排除 MPV-MoltenVK**（MPV 在 Node 流上只有声音没画面并在 mpv_initialize 阶段闪退）。
+            // 与上面原生 .uc 分支的区别仅在于引擎优先级（MDK 优先 vs MPV 优先），
+            // 原生 .uc 与其它网盘行为完全不变。
+            let ucNodeEngine = isMDKBuildAvailable ? "MDK"
+                : (isIJKBuildAvailable ? "IJKPlayer" : "VLC")
+            let ucNodeReason = isUCLocalProxy ? "UC网盘Node本地代理" : "UC网盘Node直链"
+            await MainActor.run {
+                guard playbackSessionId == sessionId else { return }
+                playbackEngineMode = .compatibility
+                compatibilityHint = ucNodeReason
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: ucNodeEngine, url: urlObj)
+                loadingMessage = "正在使用兼容内核..."
+            }
+            logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: ucNodeEngine, reason: "UC网盘Node 禁止 AVPlayer（MDK 优先，禁用 MPV）：\(ucNodeReason)")
+            log("[UCNode] 自动模式下 UC网盘Node 强制兼容内核（MDK 优先，禁用 MPV）：\(ucNodeEngine)")
         } else if isBaiduLocalProxy && enginePreference == .auto {
             // 百度网盘资源一律优先兼容内核，禁止自动模式再尝试 AVPlayer 主播放链路。
             // 原因：百度本地代理 + 鉴权 + 大文件加载会导致 AVPlayer 启动慢/超时，影响用户播放体验。
@@ -5154,6 +5180,8 @@ class PlayerState: ObservableObject {
         let nodeManaged: Bool
         // 夸克专用：本地无原生夸克 Token 时改走 Node 夸克独立路链（#vbox_nd=1）
         var quarkNodeRoute = false
+        // UC 专用：本地无原生 UC Token 时改走 Node UC 独立路链（#vbox_nd=1），两条路链凭据互不影响
+        var ucNodeRoute = false
         switch lower {
         case "quark":
             shareURL = "https://pan.quark.cn/s/\(shareId)"
@@ -5188,6 +5216,8 @@ class PlayerState: ObservableObject {
         case "uc":
             shareURL = "https://drive.uc.cn/s/\(shareId)"
             nodeManaged = false
+            // 与夸克同策略：无原生 UC Token → 改走 Node UC 独立路链；有则维持原生（vbox_fid）
+            ucNodeRoute = CloudDriveManager.shared.tokens(for: .uc).isEmpty
         case "ali", "aliyun", "alipan":
             shareURL = "https://www.alipan.com/s/\(shareId)"
             nodeManaged = false
@@ -5201,9 +5231,9 @@ class PlayerState: ObservableObject {
         let encodedPlayID = rawPlayID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? rawPlayID
         let encodedFileID = fileId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? fileId
         let fragment: String
-        if quarkNodeRoute {
-            // 夸克 Node 路链：必须带 vbox_nd=1 让 detectDrive 判为 .quarkNode；
-            // 有原始 playID 时附 vbox_node 精确定位文件（与详情页派生的夸克Node源格式一致）
+        if quarkNodeRoute || ucNodeRoute {
+            // 夸克/UC 的 Node 路链：必须带 vbox_nd=1 让 detectDrive 判为 .quarkNode / .ucNode；
+            // 有原始 playID 时附 vbox_node 精确定位文件（与详情页派生的 Node 源格式一致）
             fragment = rawPlayID.isEmpty ? "vbox_nd=1" : "vbox_nd=1&vbox_node=\(encodedPlayID)"
         } else if nodeManaged, !rawPlayID.isEmpty {
             fragment = "vbox_node=\(encodedPlayID)"

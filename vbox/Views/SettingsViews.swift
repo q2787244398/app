@@ -1318,6 +1318,7 @@ struct SettingsView: View {
         case "quark": return "q.circle.fill"
         case "baidu": return "b.circle.fill"
         case "uc": return "u.circle.fill"
+        case "ucNode": return "u.circle.fill"
         case "123pan": return "3.circle.fill"
         case "139pan": return "9.circle.fill"
         default: return "cloud.fill"
@@ -1603,7 +1604,7 @@ struct CloudAuthCenterView: View {
                         AnyView(quarkAccountCard)
                         AnyView(providerAccountCard(type: .ali, note: "阿里云盘使用官方网页扫码/登录获取 refresh_token，用于解析播放文件链接。"))
                         AnyView(AliyunPgQrLoginView())
-                        AnyView(providerAccountCard(type: .uc, note: "优先使用授权中心保存的 UC Cookie；支持网页登录兜底回收 Cookie。"))
+                        AnyView(providerAccountCard(type: .uc, note: "优先使用授权中心保存的 UC Cookie；支持原生/Node 双模式扫码登录（点击「原生扫码」页内可切换）；也可使用网页登录兜底。"))
                         AnyView(providerAccountCard(type: .one15, note: "115 使用官方网页扫码/登录回收完整 Cookie，手动 Cookie 继续保留。"))
                         AnyView(providerAccountCard(type: .pan123, note: "123云盘支持网页扫码登录回收 Cookie，播放分享链接时自动使用。"))
                         AnyView(providerAccountCard(type: .pan139, note: "139云盘（移动云盘）支持网页扫码登录回收 Cookie。"))
@@ -2210,6 +2211,7 @@ struct CloudAuthCenterView: View {
         case .woniu4k: return "s.circle.fill"
         case .bilibili: return "tv.fill"
         case .quarkNode: return "q.square.fill"
+        case .ucNode: return "u.square.fill"
         }
     }
 }
@@ -2492,6 +2494,7 @@ struct CloudPlaybackCacheView: View {
         case .woniu4k: return "s.circle.fill"
         case .bilibili: return "tv.fill"
         case .quarkNode: return "q.square.fill"
+        case .ucNode: return "u.square.fill"
         }
     }
 }
@@ -3995,10 +3998,28 @@ struct NativeCloudQRLoginView: View {
     @StateObject private var pan115Helper = CloudDriveAuthManager.Pan115LoginHelper()
     @StateObject private var aliOpenListHelper = CloudDriveAuthManager.AliOpenListQrLoginHelper()
 
+    /// UC 扫码方式：原生（走既有 UCTV/扫码，写本地 uc 凭据） / Node（Node 常驻系统，写 ucNode 凭据）。
+    /// 仅 driveType == .uc 时展示分段控件，其余网盘的原生扫码完全不受影响。
+    private enum UCScanMode: String, CaseIterable {
+        case native = "原生扫码"
+        case node = "Node扫码"
+    }
+    @State private var ucScanMode: UCScanMode = .native
+
     var body: some View {
         NavigationView {
             Group {
-                if driveType == .one15 || driveType == .pan123 || driveType == .pan139 || driveType == .pan189 || driveType == .xunlei {
+                if driveType == .uc && ucScanMode == .node {
+                    // UC网盘Node 扫码：复用通用 Node 扫码组件。
+                    // provider 必须为 bundle createTask 支持的 "ucCookie"（扫码换取 Cookie 主凭据），
+                    // 注意不能用 "uc"——bundle 无该分支，会抛「不支持的扫码登录方式」；
+                    // 登录成功后 Node 侧写入 pan.uc.cookie，由 saveProfile -> pullable["uc"] 拉回 ucNode 独立键。
+                    NodeScanQRLoginView(
+                        provider: "ucCookie",
+                        title: "UC网盘Node 扫码登录",
+                        tip: "使用 UC 浏览器扫码后确认，Cookie 写入 Node 常驻系统（独立于原生 UC 账号）。"
+                    )
+                } else if driveType == .one15 || driveType == .pan123 || driveType == .pan139 || driveType == .pan189 || driveType == .xunlei {
                     VStack(spacing: 0) {
                         if driveType == .one15 {
                             Pan115WebView(webView: pan115Helper.webView)
@@ -4027,6 +4048,16 @@ struct NativeCloudQRLoginView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
+                            if driveType == .uc {
+                                // 仅 UC：原生扫码 / Node扫码 分段切换（Node 扫码写 ucNode 凭据）
+                                Picker("扫码方式", selection: $ucScanMode) {
+                                    ForEach(UCScanMode.allCases, id: \.self) { mode in
+                                        Text(mode.rawValue).tag(mode)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                            }
+
                             Text("\(driveType.displayName) 原生扫码授权")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.primary)
@@ -4077,6 +4108,10 @@ struct NativeCloudQRLoginView: View {
                 if driveType == .one15 || driveType == .pan123 || driveType == .pan139 || driveType == .pan189 || driveType == .xunlei {
                     Task { await startLoginFlow() }
                 }
+            }
+            .onChange(of: ucScanMode) { newMode in
+                // 切到 Node 扫码时停止原生 UC 轮询，避免后台继续请求（仅 UC 生效）
+                if newMode == .node { isPolling = false }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

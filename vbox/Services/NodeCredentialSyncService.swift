@@ -98,6 +98,12 @@ final class NodeCredentialSyncService: NSObject {
         "quarkNode": ProviderSpec(nodeProvider: "quark", fields: [
             FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["pan", "quark", "cookie"]),
         ]),
+        // UC网盘Node：独立于原生 UC，用独立 keychainSlot 避免与原生 uc_tv_token 串味
+        "ucNode": ProviderSpec(nodeProvider: "uc", fields: [
+            FieldMap(nodeField: "cookie", keychainSlot: "cookie", dbPath: ["pan", "uc", "cookie"]),
+            FieldMap(nodeField: "token", keychainSlot: "extra:uc_node_tv_token", dbPath: ["pan", "uc", "token"]),
+            FieldMap(nodeField: "refreshtoken", keychainSlot: "extra:uc_node_refresh_token", dbPath: ["pan", "uc", "refreshToken"]),
+        ]),
     ]
 
     /// pull 方向：bundle GET /website/api/credentials 的 data key → vbox driveType
@@ -109,6 +115,7 @@ final class NodeCredentialSyncService: NSObject {
         "pan189": "pan189",
         "new139": "pan139",
         "quark": "quarkNode",
+        "uc": "ucNode",
     ]
 
     /// 自动推送去重（Node 就绪后只推一次，避免重复 PUT）
@@ -185,7 +192,7 @@ final class NodeCredentialSyncService: NSObject {
     /// 与 DriveType.rawValue 如 "115"/"123pan" 不一致，避免映射漏判）。
     func isNodeManaged(_ driveType: CloudDriveManager.DriveType) -> Bool {
         switch driveType {
-        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .bilibili, .quarkNode:
+        case .one15, .pan123, .pan139, .pan189, .xunlei, .guangya, .woniu4k, .bilibili, .quarkNode, .ucNode:
             return true
         default:
             return false
@@ -204,6 +211,7 @@ final class NodeCredentialSyncService: NSObject {
         case .woniu4k: return "woniu4k"
         case .bilibili: return "bilibili"
         case .quarkNode: return "quarkNode"
+        case .ucNode: return "ucNode"
         default: return nil
         }
     }
@@ -478,6 +486,10 @@ final class NodeCredentialSyncService: NSObject {
         case .quarkNode:
             primary = credential.cookie
             name = "夸克Node-Node"
+        case .ucNode:
+            // 兜底列表只镜像 Cookie 主值（TV Token / Refresh Token 仍全量推送到 Node，仅供展示层不显示）
+            primary = credential.cookie
+            name = "UC网盘Node-Node"
         default:
             return
         }

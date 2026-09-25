@@ -67,6 +67,7 @@ class CloudDriveManager: ObservableObject {
         case baidu = "baidu"
         case one15 = "115"
         case uc = "uc"
+        case ucNode = "ucNode"
         case pan123 = "123pan"
         case pan139 = "139pan"
         case pan189 = "189pan"
@@ -83,6 +84,7 @@ class CloudDriveManager: ObservableObject {
             case .baidu: return "百度网盘"
             case .one15: return "115网盘"
             case .uc: return "UC网盘"
+            case .ucNode: return "UC网盘Node"
             case .pan123: return "123云盘"
             case .pan139: return "139云盘"
             case .pan189: return "天翼云盘"
@@ -101,6 +103,7 @@ class CloudDriveManager: ObservableObject {
             case .baidu: return "完整 Cookie / BDUSS+STOKEN"
             case .one15: return "完整 Cookie / CID"
             case .uc: return "Cookie"
+            case .ucNode: return "Cookie / TV Token"
             case .pan123: return "Cookie / Token"
             case .pan139: return "Cookie / Session"
             case .pan189: return "Cookie / 账号密码（短信验证）"
@@ -1419,7 +1422,10 @@ class CloudDriveManager: ObservableObject {
         }
         if url.contains("pan.baidu.com") { return .baidu }
         if url.contains("115.com") || url.contains("115cdn.com") { return .one15 }
-        if url.contains("uc.cn") || url.contains("ucloud.cn") { return .uc }
+        if url.contains("uc.cn") || url.contains("ucloud.cn") {
+            // 带 #vbox_nd=1 标记的 UC 链接走 Node UC 路链（与原生 UC 互不冲突）
+            return url.contains("#vbox_nd=1") ? .ucNode : .uc
+        }
         if url.contains("123pan.com") || url.contains("123cloud.cn") { return .pan123 }
         if url.contains("yun.139.com") || url.contains("139.com") { return .pan139 }
         if url.contains("cloud.189.cn") || url.contains("189.cn") { return .pan189 }
@@ -10287,13 +10293,14 @@ class CloudDriveManager: ObservableObject {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ★ Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node 全部走 A1 接缝
+        // ★ Node 托管网盘：115/123/139/189/迅雷/光鸭/蜗牛/夸克Node/UC网盘Node 全部走 A1 接缝
         // （Node 常驻系统解析），废弃 vbox 原生路链。解析经
         // /spider/push/4/detail → /spider/push/4/play，错误直接抛给播放端。
         // ═══════════════════════════════════════════════════════════
         if driveType == .one15 || driveType == .pan123 || driveType == .pan139
             || driveType == .pan189 || driveType == .xunlei
-            || driveType == .guangya || driveType == .woniu4k || driveType == .quarkNode {
+            || driveType == .guangya || driveType == .woniu4k || driveType == .quarkNode
+            || driveType == .ucNode {
             self.log("[CloudDrive] 🔄 \(driveType.displayName) 走 A1 接缝（Node 常驻系统）")
             return try await resolveViaNodePan(shareURL: baseURL, driveType: driveType)
         }
@@ -10339,8 +10346,8 @@ class CloudDriveManager: ObservableObject {
                     }
                 case .uc:
                     result = try await resolveUCPlayURL(shareURL: baseURL, cookie: token.value)
-                case .one15, .pan123, .pan139, .pan189, .xunlei, .quarkNode:
-                    // Node 托管网盘：115/123/139/189/迅雷/夸克Node 由 Node 常驻系统解析（A1 接缝），
+                case .one15, .pan123, .pan139, .pan189, .xunlei, .quarkNode, .ucNode:
+                    // Node 托管网盘：115/123/139/189/迅雷/夸克Node/UC网盘Node 由 Node 常驻系统解析（A1 接缝），
                     // 原生路链已废弃；到达此分支说明凭据误入原生 Token 列表，明确报错避免静默失败。
                     throw AuthError.notAuthorized("\(driveType.displayName) 由 Node 常驻系统解析（A1 接缝），原生路链已废弃")
                 case .guangya, .woniu4k, .bilibili:
@@ -10385,6 +10392,7 @@ class CloudDriveManager: ObservableObject {
         driveType == .one15 || driveType == .pan123 || driveType == .pan139
             || driveType == .pan189 || driveType == .xunlei
             || driveType == .guangya || driveType == .woniu4k || driveType == .quarkNode
+            || driveType == .ucNode
     }
 
     /// 解析分享链接 → Node 文件列表（集数），供详情页/播放器展开选集
@@ -10420,6 +10428,7 @@ class CloudDriveManager: ObservableObject {
         case .guangya: alias = .guangya
         case .woniu4k: alias = .woniu4k
         case .quarkNode: alias = .quarkNode
+        case .ucNode: alias = .ucNode
         default: alias = .woniu4k
         }
         let result = PlayResult(
@@ -10486,6 +10495,7 @@ enum DriveTypeAlias: String {
     case baidu = "百度"
     case one15 = "115"
     case uc = "UC"
+    case ucNode = "UC网盘Node"
     case pan123 = "123云盘"
     case pan139 = "139云盘"
     case pan189 = "天翼云盘"

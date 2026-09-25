@@ -20,11 +20,11 @@ final class CloudDriveSortManager: ObservableObject {
         orderedDriveTypes(from: CloudDriveManager.DriveType.allCases)
     }
 
-    /// 弹窗可排序列表：排除派生的「夸克Node」。
-    /// 夸克Node 在详情页的位置恒定跟随「夸克」（见 PlayerViews.sortIndex），
+    /// 弹窗可排序列表：排除派生的「夸克Node」与「UC网盘Node」。
+    /// 二者在详情页的位置恒定跟随其原生盘（见 PlayerViews.sortIndex），
     /// 不参与独立排序，避免弹窗出现“拖了不生效”的无效行；displayOrder 保持不变。
     var sortableOrder: [CloudDriveManager.DriveType] {
-        displayOrder.filter { $0 != .quarkNode }
+        displayOrder.filter { $0 != .quarkNode && $0 != .ucNode }
     }
 
     func orderedDriveTypes(from available: [CloudDriveManager.DriveType]) -> [CloudDriveManager.DriveType] {
