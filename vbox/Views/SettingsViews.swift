@@ -1569,7 +1569,6 @@ struct CloudAuthCenterView: View {
     @State private var showUCTVAuth = false
     @State private var ucLoginJustCompleted = false
     @State private var showBaiduNativeQR = false
-    @State private var showBaiduNodeQR = false
     @State private var showAliNativeQR = false
     @State private var showBiliNativeQR = false
     @State private var show123NativeQR = false
@@ -1588,6 +1587,15 @@ struct CloudAuthCenterView: View {
     @State private var selectedDriveType: CloudDriveManager.DriveType = .ali
     @State private var driveTokenName = ""
     @State private var driveTokenValue = ""
+    @State private var embyServers: [EmbyServerItem] = []
+    @State private var embyEditingIndex: Int = -1
+    @State private var embyName = ""
+    @State private var embyURL = ""
+    @State private var embyUser = ""
+    @State private var embyPass = ""
+    @State private var embyBusy = false
+    @State private var embyMessage = ""
+    @State private var embyLoaded = false
 
     var body: some View {
         NavigationView {
@@ -1617,7 +1625,10 @@ struct CloudAuthCenterView: View {
                         AnyView(nodeManagedAccountCard(type: .guangya, note: "光鸭网盘由 Node 常驻系统托管：手机验证码登录后自动回收 Token，解析链路走 A1 接缝。"))
                         AnyView(nodeManagedAccountCard(type: .woniu4k, note: "蜗牛网盘由 Node 常驻系统托管：账号+密码+验证码登录，登录态自动回收 Cookie。"))
                         AnyView(nodeManagedAccountCard(type: .bilibili, note: "B站由 Node 常驻系统托管：扫码登录后自动回收 Cookie，用于哔哩|影视 资源播放。"))
-                        AnyView(baiduNodeAccountCard)
+                    }
+
+                    VStack(spacing: 16) {
+                        AnyView(embyAccountCard)
                     }
 
                     AnyView(manualTokenFallbackCard)
@@ -1665,22 +1676,6 @@ struct CloudAuthCenterView: View {
             }
             .sheet(isPresented: $showBaiduNativeQR) {
                 NativeCloudQRLoginView(driveType: .baidu)
-            }
-            .sheet(isPresented: $showBaiduNodeQR) {
-                NavigationView {
-                    NodeScanQRLoginView(
-                        provider: "baidu",
-                        title: "百度网盘Node 扫码登录",
-                        tip: "使用百度网盘 App 扫码后确认，Cookie 写入 Node 常驻系统（独立于原生百度账号，两条路链互不影响）。"
-                    )
-                    .navigationTitle("百度网盘Node 扫码登录")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("完成") { showBaiduNodeQR = false }
-                        }
-                    }
-                }
             }
             .sheet(isPresented: $showAliNativeQR) {
                 NativeCloudQRLoginView(driveType: .ali)
@@ -1807,7 +1802,7 @@ struct CloudAuthCenterView: View {
                 authStatusRow(title: "基础登录 Web Cookie", status: webStatus.text, isReady: webStatus.ready)
             }
 
-            Text("百度主账号态按 iBox 路线使用 BDUSS+STOKEN；BDCLND 会在分享验证后动态追加。PCS Cookie 仅作为可选附加缓存，不作为主登录态。")
+            Text("百度主账号态按 iBox 路线使用 BDUSS+STOKEN；BDCLND 会在分享验证后动态追加。点击「扫码授权」可在页内切换「原生扫码 / Node扫码」：原生写本地百度账号，Node 写入 Node 常驻系统（两条路链互不影响）。")
                 .font(.system(size: 12))
                 .foregroundColor(.gray)
 
@@ -1823,28 +1818,6 @@ struct CloudAuthCenterView: View {
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color.gray.opacity(0.06)))
-    }
-
-    private var baiduNodeAccountCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            accountHeader(
-                title: "百度网盘Node",
-                subtitle: authSubtitle(for: .baiduNode, fallback: "未登录"),
-                icon: "b.square.fill",
-                isReady: authManager.isAuthorized(.baiduNode)
-            )
-            Text("百度网盘Node 由 Node 常驻系统托管：使用百度网盘 App 扫码后，Cookie 写入 Node 常驻系统（独立于原生百度账号，两条路链互不影响）。")
-                .font(.system(size: 12))
-                .foregroundColor(.gray)
-            HStack(spacing: 10) {
-                Button(action: { showBaiduNodeQR = true }) {
-                    authButtonLabel("Node扫码登录", icon: "qrcode")
-                }
-            }
-            authDetailLine(for: .baiduNode, fallback: "Node 托管")
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.04)))
     }
 
     private var manualTokenFallbackCard: some View {
@@ -2115,6 +2088,273 @@ struct CloudAuthCenterView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.04)))
     }
 
+    // MARK: - Emby 媒体服务器配置卡片
+    //
+    // 对接 Node 常驻系统的 /website/api/emby/* 接口（与 TVS 配置中心「Emby服务器」页一致）：
+    //   GET  /website/api/emby/config        读取服务器列表
+    //   PUT  /website/api/emby/config        保存服务器列表 {data:[...]}
+    //   PUT  /website/api/emby/choose        设为默认 {index}
+    //   POST /website/api/emby/test          测试登录 {index}
+    //   DELETE /website/api/emby/:index      删除服务器
+
+    private var embyAccountCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            accountHeader(
+                title: "Emby媒体服务器",
+                subtitle: embyServers.isEmpty ? "未配置服务器" : "已配置 \(embyServers.count) 个 · 当前：\(embyCurrentName)",
+                icon: "server.rack",
+                isReady: !embyServers.isEmpty
+            )
+
+            HStack(spacing: 8) {
+                Picker("服务器", selection: $embyEditingIndex) {
+                    Text("— 新增服务器 —").tag(-1)
+                    ForEach(0..<embyServers.count, id: \.self) { index in
+                        Text("\(index + 1). \(embyServers[index].servername)\(embyServers[index].choose == 1 ? "（默认）" : "")")
+                            .tag(index)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+
+                Button(action: { startNewEmbyServer() }) {
+                    Text("新增")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(hex: "E11D48"))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color(hex: "E11D48").opacity(0.08))
+                        .cornerRadius(8)
+                }
+            }
+            .onChange(of: embyEditingIndex) { newIndex in
+                if newIndex >= 0 && newIndex < embyServers.count {
+                    selectEmbyServer(newIndex)
+                } else if newIndex < 0 {
+                    embyName = ""
+                    embyURL = ""
+                    embyUser = ""
+                    embyPass = ""
+                }
+            }
+
+            TextField("服务器名称", text: $embyName)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .font(.system(size: 13))
+            TextField("服务器地址（如 http://192.168.1.10:8096）", text: $embyURL)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .font(.system(size: 13))
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+            TextField("用户名", text: $embyUser)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .font(.system(size: 13))
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+            SecureField("密码", text: $embyPass)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .font(.system(size: 13))
+
+            HStack(spacing: 10) {
+                Button(action: { Task { await saveEmbyServer() } }) {
+                    Text("保存服务器")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(embyBusy ? Color.gray : Color(hex: "E11D48"))
+                        .cornerRadius(10)
+                }
+                .disabled(embyBusy)
+                Button(action: { Task { await testEmbyServer() } }) {
+                    Text("测试登录")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(embyBusy ? Color.gray : Color(hex: "E11D48"))
+                        .cornerRadius(10)
+                }
+                .disabled(embyBusy)
+            }
+
+            HStack(spacing: 10) {
+                Button(action: { Task { await chooseEmbyDefault() } }) {
+                    Text("设为默认")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(hex: "E11D48"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(Color(hex: "E11D48").opacity(0.08))
+                        .cornerRadius(10)
+                }
+                .disabled(embyBusy || embyServers.isEmpty || embyEditingIndex < 0)
+                Button(action: { Task { await deleteEmbyServer() } }) {
+                    Text("删除服务器")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(Color.red.opacity(0.08))
+                        .cornerRadius(10)
+                }
+                .disabled(embyBusy || embyServers.isEmpty)
+            }
+
+            if !embyMessage.isEmpty {
+                Text(embyMessage)
+                    .font(.system(size: 12))
+                    .foregroundColor(embyMessage.contains("失败") ? .red : .green)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.04)))
+        .onAppear {
+            if !embyLoaded {
+                Task { await loadEmbyServers() }
+            }
+        }
+    }
+
+    private var embyCurrentName: String {
+        guard !embyServers.isEmpty else { return "未配置" }
+        let index = max(0, embyDefaultIndex)
+        return embyServers[index].servername
+    }
+
+    private var embyDefaultIndex: Int {
+        let found = embyServers.firstIndex(where: { $0.choose == 1 })
+        return found ?? (embyServers.isEmpty ? -1 : 0)
+    }
+
+    private var embySelectedIndex: Int {
+        embyEditingIndex >= 0 ? embyEditingIndex : embyDefaultIndex
+    }
+
+    private func loadEmbyServers() async {
+        do {
+            let servers = try await EmbyConfigService.fetchServers()
+            embyServers = servers
+            if embyEditingIndex >= servers.count { embyEditingIndex = -1 }
+            embyLoaded = true
+        } catch {
+            embyMessage = "读取服务器失败：\(error.localizedDescription)"
+            embyLoaded = true
+        }
+    }
+
+    private func selectEmbyServer(_ index: Int) {
+        guard index >= 0 && index < embyServers.count else { return }
+        embyEditingIndex = index
+        let item = embyServers[index]
+        embyName = item.servername
+        embyURL = item.serverurl
+        embyUser = item.username
+        embyPass = item.password
+        embyMessage = ""
+    }
+
+    private func startNewEmbyServer() {
+        embyEditingIndex = -1
+        embyName = ""
+        embyURL = ""
+        embyUser = ""
+        embyPass = ""
+        embyMessage = ""
+    }
+
+    private func saveEmbyServer() async {
+        let name = embyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = embyURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let user = embyUser.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { embyMessage = "请填写服务器名称"; return }
+        guard !url.isEmpty else { embyMessage = "请填写服务器地址"; return }
+        guard !user.isEmpty else { embyMessage = "请填写用户名"; return }
+
+        var list = embyServers
+        let editing = embyEditingIndex >= 0 && embyEditingIndex < list.count
+        let keepChoose: Int
+        if editing {
+            keepChoose = list[embyEditingIndex].choose
+        } else {
+            keepChoose = list.contains(where: { $0.choose == 1 }) ? 0 : 1
+        }
+        let item = EmbyServerItem(
+            servername: name,
+            serverurl: url,
+            username: user,
+            password: embyPass,
+            choose: keepChoose
+        )
+        embyBusy = true
+        do {
+            if editing {
+                list[embyEditingIndex] = item
+            } else {
+                list.append(item)
+                embyEditingIndex = list.count - 1
+            }
+            try await EmbyConfigService.saveServers(list)
+            embyServers = list
+            embyMessage = "服务器已保存"
+        } catch {
+            embyMessage = "保存失败：\(error.localizedDescription)"
+        }
+        embyBusy = false
+    }
+
+    private func testEmbyServer() async {
+        guard !embyServers.isEmpty else { embyMessage = "还没有配置 Emby 服务器"; return }
+        let index = embySelectedIndex
+        guard index >= 0 && index < embyServers.count else { embyMessage = "服务器序号无效"; return }
+        embyBusy = true
+        do {
+            try await EmbyConfigService.test(index: index)
+            embyMessage = "登录测试成功：\(embyServers[index].servername)"
+        } catch {
+            embyMessage = "测试失败：\(error.localizedDescription)"
+        }
+        embyBusy = false
+    }
+
+    private func chooseEmbyDefault() async {
+        guard embyEditingIndex >= 0 && embyEditingIndex < embyServers.count else {
+            embyMessage = "请先选择要设为默认的服务器"
+            return
+        }
+        embyBusy = true
+        do {
+            try await EmbyConfigService.setDefault(index: embyEditingIndex)
+            var list = embyServers
+            for i in list.indices { list[i].choose = (i == embyEditingIndex) ? 1 : 0 }
+            embyServers = list
+            embyMessage = "已设为默认服务器"
+        } catch {
+            embyMessage = "设置失败：\(error.localizedDescription)"
+        }
+        embyBusy = false
+    }
+
+    private func deleteEmbyServer() async {
+        guard !embyServers.isEmpty else { embyMessage = "还没有配置 Emby 服务器"; return }
+        let index = embySelectedIndex
+        guard index >= 0 && index < embyServers.count else { embyMessage = "服务器序号无效"; return }
+        embyBusy = true
+        do {
+            try await EmbyConfigService.delete(index: index)
+            embyServers.remove(at: index)
+            if embyEditingIndex == index {
+                embyEditingIndex = -1
+            } else if embyEditingIndex > index {
+                embyEditingIndex -= 1
+            }
+            embyMessage = "服务器已删除"
+        } catch {
+            embyMessage = "删除失败：\(error.localizedDescription)"
+        }
+        embyBusy = false
+    }
+
     private func authSubtitle(for type: CloudDriveManager.DriveType, fallback: String) -> String {
         if authManager.isAuthorized(type) {
             return authManager.displayName(for: type)
@@ -2244,6 +2484,105 @@ struct CloudAuthCenterView: View {
         case .ucNode: return "u.square.fill"
         case .baiduNode: return "b.square.fill"
         }
+    }
+}
+
+// MARK: - Emby 配置服务
+//
+// 对接 Node 常驻系统 kstore bundle 的 /website/api/emby/* 路由：
+//   数据模型与 TVS 配置中心「Emby服务器」页一致（servername/serverurl/username/password/choose）。
+
+struct EmbyServerItem: Codable, Equatable {
+    var servername: String
+    var serverurl: String
+    var username: String
+    var password: String
+    var choose: Int
+}
+
+enum EmbyConfigService {
+    struct EmbyError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    private static func request(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> [String: Any] {
+        if !NodeRuntimeManager.shared.isSystemReady {
+            let deadline = Date().addingTimeInterval(15)
+            while Date() < deadline {
+                if NodeRuntimeManager.shared.isSystemReady { break }
+                if NodeRuntimeManager.shared.isCrashed {
+                    throw EmbyError(message: "Node 常驻系统已崩溃，请重启 App")
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+        guard NodeRuntimeManager.shared.isSystemReady else {
+            throw EmbyError(message: "Node 常驻系统未就绪")
+        }
+        guard let url = URL(string: NodeRuntimeManager.shared.baseURL + path) else {
+            throw EmbyError(message: "Node 地址无效")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw EmbyError(message: "Node 返回异常状态码")
+        }
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw EmbyError(message: "Node 返回格式异常")
+        }
+        if let code = json["code"] as? Int, code != 0 {
+            throw EmbyError(message: json["msg"] as? String ?? "操作失败（code=\(code)）")
+        }
+        return json
+    }
+
+    /// GET /website/api/emby/config → {code:0, data:{data:[...]}}
+    static func fetchServers() async throws -> [EmbyServerItem] {
+        let json = try await request("GET", "/website/api/emby/config")
+        guard let dataDict = json["data"] as? [String: Any],
+              let rawList = dataDict["data"] as? [[String: Any]] else {
+            return []
+        }
+        return rawList.compactMap { item in
+            guard let servername = item["servername"] as? String else { return nil }
+            return EmbyServerItem(
+                servername: servername,
+                serverurl: item["serverurl"] as? String ?? "",
+                username: item["username"] as? String ?? "",
+                password: item["password"] as? String ?? "",
+                choose: (item["choose"] as? Int) ?? 0
+            )
+        }
+    }
+
+    /// PUT /website/api/emby/config  body {data:[...]}
+    static func saveServers(_ servers: [EmbyServerItem]) async throws {
+        let list: [[String: Any]] = servers.map {
+            ["servername": $0.servername, "serverurl": $0.serverurl, "username": $0.username, "password": $0.password, "choose": $0.choose]
+        }
+        _ = try await request("PUT", "/website/api/emby/config", body: ["data": list])
+    }
+
+    /// PUT /website/api/emby/choose  body {index}
+    static func setDefault(index: Int) async throws {
+        _ = try await request("PUT", "/website/api/emby/choose", body: ["index": index])
+    }
+
+    /// POST /website/api/emby/test  body {index}
+    static func test(index: Int) async throws {
+        _ = try await request("POST", "/website/api/emby/test", body: ["index": index])
+    }
+
+    /// DELETE /website/api/emby/:index
+    static func delete(index: Int) async throws {
+        _ = try await request("DELETE", "/website/api/emby/\(index)")
     }
 }
 
@@ -4038,6 +4377,14 @@ struct NativeCloudQRLoginView: View {
     }
     @State private var ucScanMode: UCScanMode = .native
 
+    /// 百度扫码方式：原生（官方 Web 扫码，写本地 baidu 凭据） / Node（Node 常驻系统，写 baiduNode 凭据）。
+    /// 与夸克/UC 同款分段切换，仅 driveType == .baidu 时展示。
+    private enum BaiduScanMode: String, CaseIterable {
+        case native = "原生扫码"
+        case node = "Node扫码"
+    }
+    @State private var baiduScanMode: BaiduScanMode = .native
+
     var body: some View {
         NavigationView {
             Group {
@@ -4048,6 +4395,14 @@ struct NativeCloudQRLoginView: View {
                     // （不能用 "uc"——bundle 无该分支，会抛「不支持的扫码登录方式」）。
                     // 登录成功后由 saveProfile -> pullable["uc"] 拉回 ucNode 独立键。
                     NodeUcTwoStepLoginView()
+                } else if driveType == .baidu && baiduScanMode == .node {
+                    // 百度网盘Node：复用通用 Node 扫码组件（provider=baidu），
+                    // 登录态写入 Node 常驻系统（独立于原生百度账号，两条路链互不影响）。
+                    NodeScanQRLoginView(
+                        provider: "baidu",
+                        title: "百度网盘Node 扫码登录",
+                        tip: "使用百度网盘 App 扫码后确认，Cookie 写入 Node 常驻系统（独立于原生百度账号，两条路链互不影响）。"
+                    )
                 } else if driveType == .one15 || driveType == .pan123 || driveType == .pan139 || driveType == .pan189 || driveType == .xunlei {
                     VStack(spacing: 0) {
                         if driveType == .one15 {
@@ -4077,14 +4432,23 @@ struct NativeCloudQRLoginView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
-                            if driveType == .uc {
-                                // 仅 UC：原生扫码 / Node扫码 分段切换（Node 扫码写 ucNode 凭据）
-                                Picker("扫码方式", selection: $ucScanMode) {
-                                    ForEach(UCScanMode.allCases, id: \.self) { mode in
-                                        Text(mode.rawValue).tag(mode)
+                            if driveType == .uc || driveType == .baidu {
+                                // 原生扫码 / Node扫码 分段切换（Node 扫码写 Node 托管凭据）
+                                if driveType == .uc {
+                                    Picker("扫码方式", selection: $ucScanMode) {
+                                        ForEach(UCScanMode.allCases, id: \.self) { mode in
+                                            Text(mode.rawValue).tag(mode)
+                                        }
                                     }
+                                    .pickerStyle(.segmented)
+                                } else {
+                                    Picker("扫码方式", selection: $baiduScanMode) {
+                                        ForEach(BaiduScanMode.allCases, id: \.self) { mode in
+                                            Text(mode.rawValue).tag(mode)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
                                 }
-                                .pickerStyle(.segmented)
                             }
 
                             Text("\(driveType.displayName) 原生扫码授权")
@@ -4140,6 +4504,10 @@ struct NativeCloudQRLoginView: View {
             }
             .onChange(of: ucScanMode) { newMode in
                 // 切到 Node 扫码时停止原生 UC 轮询，避免后台继续请求（仅 UC 生效）
+                if newMode == .node { isPolling = false }
+            }
+            .onChange(of: baiduScanMode) { newMode in
+                // 切到 Node 扫码时停止原生百度轮询，避免后台继续请求（仅百度生效）
                 if newMode == .node { isPolling = false }
             }
             .toolbar {

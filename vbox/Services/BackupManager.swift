@@ -208,6 +208,7 @@ enum BackupError: LocalizedError, Sendable {
 struct BackupRestoreResult {
     var restored: [BackupCategory]
     var skippedCredentialAccountMismatch: Bool
+    var skippedCredentialMissingInBackup: Bool
     var skippedRemoteSourcesOutdated: Bool
     var totalCounts: [BackupCategory: Int]
 
@@ -215,6 +216,9 @@ struct BackupRestoreResult {
         var lines = restored.map { "\($0.title)：\(totalCounts[$0] ?? 0) 条" }
         if skippedCredentialAccountMismatch {
             lines.append("网盘凭据：备份账号与当前账号不一致，已跳过")
+        }
+        if skippedCredentialMissingInBackup {
+            lines.append("网盘凭据：备份文件中未包含该数据（备份时未勾选「网盘凭据」）")
         }
         if skippedRemoteSourcesOutdated {
             lines.append("远程源配置：检测到远程源已有新版本，已跳过还原旧缓存")
@@ -429,9 +433,12 @@ final class BackupManager {
     // MARK: - 生成备份文件
 
     func createBackup(categories: [BackupCategory], password: String?) async throws -> Data {
-        let account = DatabaseManager.shared.getSetting(key: "account")
-            ?? DatabaseManager.shared.getSetting(key: "username")
-            ?? ""
+        // 账号兜底：getSetting 可能返回空字符串（非 nil），此时也应回退到 username，
+        // 避免备份文件 account 为空导致还原时网盘凭据账号比对失败。
+        var account = DatabaseManager.shared.getSetting(key: "account") ?? ""
+        if account.isEmpty {
+            account = DatabaseManager.shared.getSetting(key: "username") ?? ""
+        }
         let username = DatabaseManager.shared.getSetting(key: "username") ?? account
 
         var payload = BackupPayload(account: account, categories: [:])
@@ -541,14 +548,25 @@ final class BackupManager {
         let envelope = try parseEnvelope(data: backupData)
         let payload = try await decodePayload(envelope: envelope, password: password)
 
-        var result = BackupRestoreResult(restored: [], skippedCredentialAccountMismatch: false, skippedRemoteSourcesOutdated: false, totalCounts: [:])
+        var result = BackupRestoreResult(restored: [], skippedCredentialAccountMismatch: false, skippedCredentialMissingInBackup: false, skippedRemoteSourcesOutdated: false, totalCounts: [:])
 
         for category in categories {
-            guard let raw = payload.categories[category.rawValue] else { continue }
+            guard let raw = payload.categories[category.rawValue] else {
+                // 网盘凭据未包含在备份文件中（常见于备份时未勾选该敏感类目），单独提示，避免静默跳过
+                if category == .cloudCredentials {
+                    result.skippedCredentialMissingInBackup = true
+                }
+                continue
+            }
 
-            // 严格账号绑定：网盘凭据仅在备份账号与当前账号一致时还原
+            // 严格账号绑定：网盘凭据仅在备份账号与当前账号一致时还原。
+            // 比较前统一去除首尾空白并忽略大小写，避免"肉眼看着一致"却因空格/大小写差异被误判为不一致。
             if category == .cloudCredentials {
-                guard payload.account == currentAccount else {
+                let backupAccount = payload.account.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                let current = currentAccount.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                guard !backupAccount.isEmpty, backupAccount == current else {
                     result.skippedCredentialAccountMismatch = true
                     continue
                 }
@@ -672,6 +690,9 @@ final class BackupManager {
 
         case .cloudCredentials:
             let snapshot = try decoder.decode(CredentialsSnapshot.self, from: data)
+            // 关键：写回前先标记 Keychain 已初始化，防止后续 reload 触发的
+            // "全新安装清理"（purgeKeychainIfFreshInstall）把刚还原的凭据当作卸载残留删除。
+            CloudDriveAuthManager.markKeychainInitialized()
             try SecureCredentialStore.save(credentials: snapshot.credentials)
             try SecureCredentialStore.save(tokens: snapshot.tokens)
             CloudDriveAuthManager.shared.reloadCredentialsFromKeychain()

@@ -3365,15 +3365,30 @@ globalThis.__JS_SPIDER__ = _spider;
     }
 
     /// 天翼云盘（cloud.189.cn）访问码补全：
-    /// 链接文本未携带访问码时，从周围上下文提取"访问码/提取码/密码"并拼回链接（?pwd=）。
-    /// Node 路链的 la0 从 URL 文本提取 passCode（yRt），原生 189 路链也从 ?pwd= 读取，
-    /// 缺访问码的有密码分享 shareinfo 请求会返回 HTTP 400（ShareInfoNotFound）。
+    /// 1) 官方分享链接「?code=xxx#访问码」的访问码在 URL fragment 中，bundle 的 la0/yRt
+    ///    只解析查询参数（pwd/accessCode）与中文标注，识别不了 fragment —— 缺访问码的
+    ///    有密码分享 shareinfo 请求会返回 HTTP 400（ShareInfoNotFound），这里把 fragment
+    ///    中的访问码并入查询参数（?pwd=）。
+    /// 2) 链接文本未携带访问码时，从周围上下文提取"访问码/提取码/密码"并拼回链接（?pwd=）。
+    /// 3) 追加 pwd 时若链接已带 fragment（#...），必须插到 fragment 之前，否则会被并入
+    ///    fragment 丢失。
     private func enrichTianyiAccessCode(url: String, context: String) -> String {
         guard url.contains("cloud.189.cn") else { return url }
-        // 链接已携带访问码（中文标注或 pwd/accessCode 参数）则跳过
-        if url.range(of: #"(访问码|提取码|密码|pwd|accessCode)[:：=\s]*[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil {
+        // 链接已携带访问码（中文标注或 pwd/accessCode 查询参数）则跳过
+        if url.range(of: #"(访问码|提取码|密码)[:：=\s]*[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil
+            || url.range(of: #"[?&]pwd=[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil
+            || url.range(of: #"[?&]accessCode=[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil {
             return url
         }
+        // 官方格式 ?code=xxx#访问码：把 fragment 中的访问码并入查询参数
+        if let frag = url.range(of: #"#([A-Za-z0-9]{4,8})$"#, options: .regularExpression) {
+            let code = String(url[frag]).dropFirst()
+            guard !code.isEmpty else { return url }
+            let head = String(url[..<frag.lowerBound])
+            let sep = head.contains("?") ? "&" : "?"
+            return "\(head)\(sep)pwd=\(code)"
+        }
+        // 从链接周围文本提取访问码
         guard let m = context.range(of: #"(访问码|提取码|密码)[:：\s]*([A-Za-z0-9]{4,8})"#, options: .regularExpression) else {
             return url
         }
@@ -3381,6 +3396,13 @@ globalThis.__JS_SPIDER__ = _spider;
             .replacingOccurrences(of: #"(访问码|提取码|密码)[:：\s]*"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else { return url }
+        // pwd 必须插入到 fragment 之前，否则会被并入 fragment 丢失
+        if let hash = url.range(of: "#") {
+            let head = String(url[..<hash.lowerBound])
+            let tail = String(url[hash.lowerBound...])
+            let sep = head.contains("?") ? "&" : "?"
+            return "\(head)\(sep)pwd=\(code)\(tail)"
+        }
         return url.contains("?") ? "\(url)&pwd=\(code)" : "\(url)?pwd=\(code)"
     }
 

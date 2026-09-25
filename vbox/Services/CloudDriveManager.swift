@@ -10419,6 +10419,12 @@ class CloudDriveManager: ObservableObject {
         if driveType == .baiduNode {
             clean = Self.normalizeBaiduAccessCode(clean)
         }
+        // 天翼云盘：官方「?code=xxx#访问码」的访问码在 fragment 中，bundle 的 la0/yRt
+        // 只解析查询参数/中文标注，识别不了 fragment；这里兜底把 fragment 访问码并入
+        // ?pwd=，否则有密码分享 shareinfo 会 400。
+        if driveType == .pan189 {
+            clean = Self.normalizeTianyiAccessCode(clean)
+        }
         let share = try await NodePanResolver.shared.resolveShare(clean)
         self.log("[CloudDrive] ✅ \(driveType.displayName) Node 文件列表: \(share.entries.count) 个文件")
         return share
@@ -10449,6 +10455,26 @@ class CloudDriveManager: ObservableObject {
         clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else { return clean }
         return clean.contains("?") ? "\(clean)&pwd=\(code)" : "\(clean)?pwd=\(code)"
+    }
+
+    /// 天翼云盘访问码归一化（兜底）：任何来源的 189 分享链接在交给 Node bundle 前，
+    /// 统一处理官方「?code=xxx#访问码」格式 —— 访问码在 fragment 中，bundle 的 la0/yRt
+    /// 只识别查询参数（pwd/accessCode）与中文标注，识别不了 fragment；有密码分享缺访问码
+    /// 时 shareinfo 请求会返回 HTTP 400。这里把 fragment 中的访问码并入查询参数 ?pwd=。
+    private static func normalizeTianyiAccessCode(_ url: String) -> String {
+        guard url.contains("cloud.189.cn") else { return url }
+        // 已带查询参数 pwd/accessCode 或中文标注则跳过
+        if url.range(of: #"[?&]pwd=[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil
+            || url.range(of: #"[?&]accessCode=[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil
+            || url.range(of: #"(访问码|提取码|密码)[:：=\s]*[A-Za-z0-9]{4,}"#, options: .regularExpression) != nil {
+            return url
+        }
+        guard let frag = url.range(of: #"#([A-Za-z0-9]{4,8})$"#, options: .regularExpression) else { return url }
+        let code = String(url[frag]).dropFirst()
+        guard !code.isEmpty else { return url }
+        let head = String(url[..<frag.lowerBound])
+        let sep = head.contains("?") ? "&" : "?"
+        return "\(head)\(sep)pwd=\(code)"
     }
 
     /// 用 playID 换取播放地址（A1 接缝 /spider/push/4/play），返回带正确盘别标识的 PlayResult

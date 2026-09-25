@@ -3093,6 +3093,13 @@ final class CloudDriveAuthManager: ObservableObject {
         return true
     }
 
+    /// 标记 Keychain 网盘凭据已初始化（只写标记，不执行清理）。
+    /// 用于备份还原：写回凭据前先标记，避免还原后 reload 触发的"全新安装清理"
+    /// 把刚写入的凭据当作卸载残留删掉。
+    static func markKeychainInitialized() {
+        UserDefaults.standard.set(true, forKey: freshInstallMarkerKey)
+    }
+
     private func load() {
         // 方案 A：全新安装时清空 Keychain 网盘凭据，避免卸载重装后旧凭据残留
         if Self.purgeKeychainIfFreshInstall() {
