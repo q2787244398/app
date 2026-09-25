@@ -3968,6 +3968,23 @@ class PlayerState: ObservableObject {
             }
             logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: baiduNodeEngine, reason: "百度网盘Node 禁止 AVPlayer（MDK 优先，禁用 MPV）：\(baiduNodeReason)")
             log("[BaiduNode] 自动模式下 百度网盘Node 强制兼容内核（MDK 优先，禁用 MPV）：\(baiduNodeEngine)")
+        } else if enginePreference == .auto, driveType == .baiduNode, isNodePanProxy,
+                  (isMDKBuildAvailable || isIJKBuildAvailable || isVLCBuildAvailable) {
+            // 百度网盘Node 的 Node 代理流（/spider/push/4/proxy/baidu/…，非 baidu-stream 本地代理）：
+            // 文件名即使不命中复杂封装规则也会落到默认 AVPlayer。AVPlayer 对 Node 代理的
+            // 大文件 HEVC/高码率流首帧解码慢，表现为短暂"有声音没画面"。
+            // 方案1：直接走兼容内核（MDK 优先，禁用 MPV-MoltenVK），跳过 AVPlayer 阶段。
+            let baiduNodeProxyEngine = isMDKBuildAvailable ? "MDK"
+                : (isIJKBuildAvailable ? "IJKPlayer" : "VLC")
+            await MainActor.run {
+                guard playbackSessionId == sessionId else { return }
+                playbackEngineMode = .compatibility
+                compatibilityHint = "百度网盘Node代理流"
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: baiduNodeProxyEngine, url: urlObj)
+                loadingMessage = "正在使用兼容内核..."
+            }
+            logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: baiduNodeProxyEngine, reason: "百度网盘Node 代理流禁止 AVPlayer（MDK 优先，禁用 MPV）")
+            log("[BaiduNode] 自动模式下 百度网盘Node 代理流强制兼容内核（MDK 优先，禁用 MPV）：\(baiduNodeProxyEngine)")
         } else if isBaiduLocalProxy && enginePreference == .auto {
             // 百度网盘资源一律优先兼容内核，禁止自动模式再尝试 AVPlayer 主播放链路。
             // 原因：百度本地代理 + 鉴权 + 大文件加载会导致 AVPlayer 启动慢/超时，影响用户播放体验。
