@@ -510,6 +510,9 @@ struct NodeScanQRLoginView: View {
     @State private var isGenerating = false
     @State private var isPolling = false
     @State private var taskId: String? = nil
+    /// 创建当前任务时使用的 provider。轮询只用它，绝不用视图当前的 provider，
+    /// 避免多步登录改写 provider 后 poll 与任务不匹配（Node 侧会返回「任务不存在或已结束」）
+    @State private var taskProvider = ""
     @State private var timer: Timer? = nil
 
     /// 轮询上下文（引用类型：SwiftUI View 值重建时保留计时/失败计数/并发标志）
@@ -519,7 +522,7 @@ struct NodeScanQRLoginView: View {
         var inFlight = false
         /// 生成代数：每次 regenerate 自增，旧请求返回后结果直接丢弃
         var generation = 0
-        /// 终端状态后自动重新生成的次数（限 1 次，防止引擎反复重启导致死循环）
+        /// 终端状态后自动重新生成的次数（上限 maxAutoRegen，防止引擎反复重启导致死循环）
         var autoRegenCount = 0
         var baseline = ""
     }
@@ -529,6 +532,9 @@ struct NodeScanQRLoginView: View {
     private let pollTimeout: TimeInterval = 290
     /// 连续网络失败上限（1.5s/次 × 6 ≈ 9s），超过停止避免无限"轮询中"
     private let maxConsecutiveFailures = 6
+    /// 任务丢失（终端状态）后自动换码上限：Node 侧任务只存内存，引擎重启即整表清空，
+    /// 旧码必然失效；允许 2 次自动换码，避免用户反复扫到死码
+    private let maxAutoRegen = 2
 
     var body: some View {
         ScrollView {
@@ -580,10 +586,29 @@ struct NodeScanQRLoginView: View {
         .onAppear {
             Task { await regenerate() }
         }
+        .onChange(of: provider) { _ in
+            // 同一个视图实例被复用于另一步登录（provider 变更）时，旧任务与旧二维码
+            // 一律作废：清空任务绑定并立即为新 provider 生成二维码，杜绝「二维码/任务不匹配」
+            pollCtx.generation += 1
+            pollCtx.inFlight = false
+            pollCtx.autoRegenCount = 0
+            timer?.invalidate()
+            timer = nil
+            isPolling = false
+            taskId = nil
+            taskProvider = ""
+            Task { await regenerate() }
+        }
         .onDisappear {
             timer?.invalidate()
             timer = nil
-            cancelTask()
+            isPolling = false
+            // 多步登录（onSuccess 非空）时 onDisappear 是「切步骤」而不是「退出登录」：
+            // 此时发 cancel 会把刚交接出去的任务一起删掉，下一次 poll 就会返回
+            // 「登录任务不存在或已结束」。因此只有单步登录才在退出时取消任务。
+            if onSuccess == nil {
+                cancelTask()
+            }
         }
     }
 
@@ -636,6 +661,8 @@ struct NodeScanQRLoginView: View {
             let result = try await NodeLoginAPIClient.request("POST", "/website/api/login/start", body: ["provider": provider])
             let newTaskId = result["taskId"] as? String ?? ""
             taskId = newTaskId
+            // 一并锁定本任务对应的 provider，后续 poll 只认它
+            taskProvider = provider
             if let qrSrc = result["qrImage"] as? String, let img = NodeLoginAPIClient.image(fromDataURL: qrSrc) {
                 qrImage = img
                 statusText = result["msg"] as? String ?? "请扫码确认"
@@ -661,6 +688,8 @@ struct NodeScanQRLoginView: View {
     }
 
     private func poll(taskId: String) async {
+        // provider 未锁定（任务尚未创建）时不轮询，避免发出不匹配的请求
+        guard !taskProvider.isEmpty else { return }
         // 并发护栏：上一次请求未返回时跳过本次（轮询超时 10s > 定时器 1.5s）
         guard !pollCtx.inFlight else { return }
         // 代数护栏：regenerate 后旧请求的结果直接丢弃
@@ -677,7 +706,7 @@ struct NodeScanQRLoginView: View {
         do {
             let result = try await NodeLoginAPIClient.request(
                 "POST", "/website/api/login/poll",
-                body: ["provider": provider, "taskId": taskId],
+                body: ["provider": taskProvider, "taskId": taskId],
                 timeout: 10
             )
             guard gen == pollCtx.generation else { return }
@@ -711,15 +740,24 @@ struct NodeScanQRLoginView: View {
         }
     }
 
-    /// 终端状态：停止轮询并展示原因；Node 重启导致任务丢失时自动重新生成一次
+    /// 终端状态：Node 侧任务已丢失（过期 / 被删 / 引擎重启清表），旧二维码必然失效。
+    /// 立即换一张新码并明确提示，避免用户反复扫到死码（曾出现「前两次扫码都提示
+    /// 登录任务不存在或已结束，第三次才成功」）。
     private func handleTerminal(_ msg: String) {
-        stopPolling(status: "登录已结束", error: msg)
+        stopPolling(status: "二维码已失效，正在刷新...", error: msg)
         pollCtx.autoRegenCount += 1
-        guard pollCtx.autoRegenCount <= 1 else { return }
+        guard pollCtx.autoRegenCount <= maxAutoRegen else {
+            statusText = "二维码已失效"
+            errorText = msg + "（已自动刷新多次仍无效，请手动重新生成）"
+            return
+        }
         Task {
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            try? await Task.sleep(nanoseconds: 600_000_000)
             guard !isPolling else { return }
             await regenerate()
+            if isPolling {
+                statusText = "二维码已刷新，请重新扫码确认"
+            }
         }
     }
 
