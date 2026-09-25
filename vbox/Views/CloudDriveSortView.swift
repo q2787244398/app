@@ -30,7 +30,7 @@ struct CloudDriveSortPopup: View {
                 }
 
                 List {
-                    ForEach(sortManager.displayOrder, id: \.self) { type in
+                    ForEach(sortManager.sortableOrder, id: \.self) { type in
                         HStack(spacing: 10) {
                             Image(systemName: "line.3.horizontal")
                                 .font(.system(size: 14, weight: .medium))
@@ -52,7 +52,7 @@ struct CloudDriveSortPopup: View {
                 .environment(\.editMode, .constant(.active))
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .frame(height: min(CGFloat(sortManager.displayOrder.count) * 44, 340))
+                .frame(height: min(CGFloat(sortManager.sortableOrder.count) * 44, 340))
 
                 HStack {
                     Button("恢复默认") {

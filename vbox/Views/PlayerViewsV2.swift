@@ -2978,6 +2978,7 @@ class PlayerState: ObservableObject {
                     let msg: String
                     switch error {
                     case .tokenNotConfigured: msg = "未配置阿里云盘 Token"
+                    case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
                     case .noPlayURL(let reason): msg = reason
                     case .invalidShareURL: msg = "无效的分享链接"
                     case .saveFailed: msg = "转存失败"
@@ -3167,6 +3168,7 @@ class PlayerState: ObservableObject {
                 let msg: String
                 switch error {
                 case .tokenNotConfigured: msg = "未配置UC网盘 Token"
+                case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
                 case .noPlayURL(let reason): msg = reason
                 case .invalidShareURL: msg = "无效的分享链接"
                 case .saveFailed: msg = "转存失败"
@@ -3239,6 +3241,7 @@ class PlayerState: ObservableObject {
                     let msg: String
                     switch error {
                     case .tokenNotConfigured: msg = "未配置迅雷云盘 Cookie"
+                    case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
                     case .noPlayURL(let reason): msg = reason
                     case .invalidShareURL: msg = "无效的分享链接"
                     case .saveFailed: msg = "转存失败"
@@ -3312,6 +3315,7 @@ class PlayerState: ObservableObject {
                     let msg: String
                     switch error {
                     case .tokenNotConfigured: msg = "未配置115网盘 Cookie/CID"
+                    case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
                     case .noPlayURL(let reason): msg = reason
                     case .invalidShareURL: msg = "无效的分享链接"
                     case .saveFailed: msg = "转存失败"
@@ -3386,6 +3390,7 @@ class PlayerState: ObservableObject {
                     let msg: String
                     switch error {
                     case .tokenNotConfigured: msg = "未配置123云盘 Cookie"
+                    case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
                     case .noPlayURL(let reason): msg = reason
                     case .invalidShareURL: msg = "无效的分享链接"
                     case .saveFailed: msg = "转存失败"
@@ -3460,6 +3465,7 @@ class PlayerState: ObservableObject {
                     let msg: String
                     switch error {
                     case .tokenNotConfigured: msg = "未配置139云盘 Cookie"
+                    case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
                     case .noPlayURL(let reason): msg = reason
                     case .invalidShareURL: msg = "无效的分享链接"
                     case .saveFailed: msg = "转存失败"
@@ -3533,6 +3539,7 @@ class PlayerState: ObservableObject {
                     let msg: String
                     switch error {
                     case .tokenNotConfigured: msg = "未配置天翼云盘 Cookie"
+                    case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
                     case .noPlayURL(let reason): msg = reason
                     case .invalidShareURL: msg = "无效的分享链接"
                     case .saveFailed: msg = "转存失败"
@@ -3556,6 +3563,7 @@ class PlayerState: ObservableObject {
             let msg: String
             switch error {
             case .tokenNotConfigured: msg = "未配置\(driveType.displayName) Token"
+            case .nodeNotReady(let name): msg = "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
             case .noPlayURL(let reason): msg = reason
             case .invalidShareURL: msg = "无效的分享链接"
             case .saveFailed: msg = "转存失败"
@@ -4963,7 +4971,9 @@ class PlayerState: ObservableObject {
     ///   - Node 托管盘（迅雷/115/123/139/189/光鸭/蜗牛）：构造成分享链接 + `#vbox_node=<原始playID>`，
     ///     走 handleDriveUrl → handleNodeManagedDrive（A1 接缝 /spider/push/4/*），按 playID 精确定位文件；
     ///   - 原生盘（夸克/百度/UC/阿里）：构造成分享链接 + `#vbox_fid=<fileId>`，
-    ///     走既有原生 Token 路链（夸克/百度/阿里用 fid 定位文件）；
+    ///     走既有原生 Token 路链（百度/阿里/UC 用 fid 定位文件）。
+    ///     夸克例外：本地已配置原生夸克 Token 时走原生（vbox_fid）；未配置时改走
+    ///     Node 夸克独立路链（`#vbox_nd=1&vbox_node=<原始playID>`），两条路链凭据互不影响；
     ///   - 未知 providerId 返回 nil（保持原判死行为，不改变其它源逻辑）。
     private static func bridgeNodePanJSON(_ json: [String: Any], rawPlayID: String) -> (url: String, headers: [String: String])? {
         guard let providerId = json["providerId"] as? String,
@@ -4975,10 +4985,15 @@ class PlayerState: ObservableObject {
         let lower = providerId.lowercased()
         let shareURL: String
         let nodeManaged: Bool
+        // 夸克专用：本地无原生夸克 Token 时改走 Node 夸克独立路链（#vbox_nd=1）
+        var quarkNodeRoute = false
         switch lower {
         case "quark":
             shareURL = "https://pan.quark.cn/s/\(shareId)"
             nodeManaged = false
+            // 凭据二选一：已配置原生夸克 Token → 维持现状走原生（vbox_fid）；
+            // 未配置 → 走 Node 夸克路链（vbox_nd=1&vbox_node），避免只登了 Node 夸克的用户播放失败
+            quarkNodeRoute = CloudDriveManager.shared.tokens(for: .quark).isEmpty
         case "thunder", "xunlei":
             shareURL = "https://pan.xunlei.com/s/\(shareId)"
             nodeManaged = true
@@ -5019,7 +5034,11 @@ class PlayerState: ObservableObject {
         let encodedPlayID = rawPlayID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? rawPlayID
         let encodedFileID = fileId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? fileId
         let fragment: String
-        if nodeManaged, !rawPlayID.isEmpty {
+        if quarkNodeRoute {
+            // 夸克 Node 路链：必须带 vbox_nd=1 让 detectDrive 判为 .quarkNode；
+            // 有原始 playID 时附 vbox_node 精确定位文件（与详情页派生的夸克Node源格式一致）
+            fragment = rawPlayID.isEmpty ? "vbox_nd=1" : "vbox_nd=1&vbox_node=\(encodedPlayID)"
+        } else if nodeManaged, !rawPlayID.isEmpty {
             fragment = "vbox_node=\(encodedPlayID)"
         } else if !fileId.isEmpty {
             fragment = "vbox_fid=\(encodedFileID)"

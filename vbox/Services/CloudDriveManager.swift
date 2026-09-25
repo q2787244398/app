@@ -10392,7 +10392,7 @@ class CloudDriveManager: ObservableObject {
     func resolveNodeShare(_ shareURL: String, driveType: DriveType) async throws -> NodePanShareResult {
         guard NodeRuntimeManager.shared.isSystemReady else {
             self.log("[CloudDrive] ❌ \(driveType.displayName) 需要 Node 常驻系统，但 Node 未就绪")
-            throw DriveError.tokenNotConfigured("\(driveType.displayName)（Node 未就绪，请稍后重试）")
+            throw DriveError.nodeNotReady(driveType.displayName)
         }
         // 剥离 vbox fragment（#vbox_nd=1 / #vbox_node=…），只把干净分享链接交给 Node，
         // 避免 fragment 干扰 bundle 对 pan.quark.cn 分享链接的识别。
@@ -10407,7 +10407,7 @@ class CloudDriveManager: ObservableObject {
     func resolveNodePlay(playID: String, driveType: DriveType) async throws -> PlayResult {
         guard NodeRuntimeManager.shared.isSystemReady else {
             self.log("[CloudDrive] ❌ \(driveType.displayName) 需要 Node 常驻系统，但 Node 未就绪")
-            throw DriveError.tokenNotConfigured("\(driveType.displayName)（Node 未就绪，请稍后重试）")
+            throw DriveError.nodeNotReady(driveType.displayName)
         }
         let play = try await NodePanResolver.shared.resolvePlay(playID: playID)
         let alias: DriveTypeAlias
@@ -10501,6 +10501,9 @@ enum DriveError: LocalizedError {
     case saveFailed
     case notImplemented
     case tokenNotConfigured(String)
+    /// Node 托管网盘专用：Node 常驻系统未就绪（非 Token 缺失，避免出现
+    /// “未配置xxx（Node 未就绪） Token”这类拼接别扭的提示）
+    case nodeNotReady(String)
 
     var errorDescription: String? {
         switch self {
@@ -10516,6 +10519,8 @@ enum DriveError: LocalizedError {
             return "该网盘暂不支持"
         case .tokenNotConfigured(let name):
             return "未配置\(name) Token"
+        case .nodeNotReady(let name):
+            return "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
         }
     }
 }

@@ -1924,6 +1924,10 @@ struct CloudAuthCenterView: View {
         guard !driveTokenName.isEmpty, !driveTokenValue.isEmpty else { return }
         cloudDriveManager.addToken(type: selectedDriveType, name: driveTokenName, value: driveTokenValue)
         authManager.saveManualCredential(type: selectedDriveType, name: driveTokenName, value: driveTokenValue)
+        // Node 托管盘（含夸克Node）手动粘贴后同样要推送到 Node，否则 A1 接缝仍用旧凭据解析导致播放失败
+        if CloudDriveManager.isNodeManagedDrive(selectedDriveType) {
+            Task { await NodeCredentialSyncService.shared.syncNow(direction: .push) }
+        }
         driveTokenName = ""
         driveTokenValue = ""
     }
@@ -1942,14 +1946,14 @@ struct CloudAuthCenterView: View {
                 icon: iconForDriveType(.quark),
                 isReady: !tokens.isEmpty || authManager.isAuthorized(.quark)
             )
-            Text("支持原生扫码登录，扫码后自动保存 Cookie；也可使用网页登录兜底。")
+            Text("支持原生/Node 双模式扫码登录（页内可切换）；也可使用网页登录兜底。")
                 .font(.system(size: 12))
                 .foregroundColor(.gray)
             HStack(spacing: 10) {
                 Button(action: { showQuarkNativeQR = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "qrcode")
-                        Text("原生扫码登录")
+                        Text("扫码登录（原生/Node）")
                             .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundColor(.white)
@@ -3282,6 +3286,7 @@ struct BaiduTestView: View {
     private func driveErrorToString(_ error: DriveError) -> String {
         switch error {
         case .tokenNotConfigured(let name): return "未配置\(name) Token"
+        case .nodeNotReady(let name): return "\(name) 需要 Node 常驻系统，当前未就绪，请稍后重试"
         case .noPlayURL(let reason): return reason
         case .saveFailed: return "转存失败"
         case .invalidResponse: return "服务器响应异常"
@@ -3567,6 +3572,13 @@ struct QuarkNativeQRLoginTestView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var cloudDriveManager: CloudDriveManager
 
+    /// 扫码方式：原生（su.quark.cn 私有接口，写本地夸克 Token） / Node（Node 常驻系统，写 quarkNode 凭据）
+    enum QuarkScanMode: String, CaseIterable {
+        case native = "原生扫码"
+        case node = "Node扫码"
+    }
+    @State private var scanMode: QuarkScanMode = .native
+
     @State private var qrToken: CloudDriveManager.QuarkQrLoginToken?
     @State private var qrImage: UIImage?
     @State private var statusText = "点击下方按钮生成夸克登录二维码"
@@ -3581,27 +3593,57 @@ struct QuarkNativeQRLoginTestView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    statusCard
-                    qrCard
-                    actionArea
-                    resultCard
-                    tipCard
+            VStack(spacing: 0) {
+                Picker("扫码方式", selection: $scanMode) {
+                    ForEach(QuarkScanMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
-                .padding(16)
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+
+                if scanMode == .native {
+                    nativeScanContent
+                } else {
+                    // Node 扫码：复用通用 Node 扫码组件（provider=quark），
+                    // 与原生扫码互不影响，登录态写入 Node 常驻系统。
+                    NodeScanQRLoginView(
+                        provider: "quark",
+                        title: "夸克Node 扫码登录",
+                        tip: "使用夸克 App 扫码，Token 写入 Node 常驻系统（独立于原生夸克账号）。"
+                    )
+                }
             }
             .background(Color(uiColor: .systemBackground))
-            .navigationTitle("夸克原生扫码测试")
+            .navigationTitle("夸克扫码登录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
             }
+            .onChange(of: scanMode) { newMode in
+                // 切换到 Node 扫码时停止原生轮询，避免后台继续请求
+                if newMode == .node { isPolling = false }
+            }
             .onDisappear {
                 isPolling = false
             }
+        }
+    }
+
+    /// 原生扫码（原有内容，逻辑保持不变）
+    private var nativeScanContent: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 18) {
+                statusCard
+                qrCard
+                actionArea
+                resultCard
+                tipCard
+            }
+            .padding(16)
         }
     }
 
