@@ -3595,10 +3595,26 @@ class PlayerState: ObservableObject {
             let share = try await CloudDriveManager.shared.resolveNodeShare(cleanShareURL, driveType: driveType)
             let entries = share.entries
 
-            // 详情页指定剧集：通过 vbox_node fragment（playID）定位用户点击的集数
+            // 详情页指定剧集：通过 vbox_node fragment（playID）定位用户点击的集数。
+            // Node 每次 detail 会重新生成 playToken（含 stoken/expiry），同一文件的
+            // playID 整串可能变化，因此精确匹配失败时回退用稳定标识（fileId，其次文件名）
+            // 匹配同一文件；命中后仍用本次解析出的 playID 取链，避免 token 过期。
             let selectedIndex: Int
             if let playID = vboxParams["vbox_node"], !playID.isEmpty {
-                guard let idx = entries.firstIndex(where: { $0.playID == playID }) else {
+                var matched = entries.firstIndex(where: { $0.playID == playID })
+                if matched == nil, let key = nodeStableFileKey(fromPlayID: playID) {
+                    matched = entries.firstIndex(where: { nodeStableFileKey(fromPlayID: $0.playID) == key })
+                    if let m = matched {
+                        log("[Node] ⚠️ \(driveType.displayName) playID 整串未命中，已按 fileId=\(key) 匹配到 index=\(m)")
+                    }
+                }
+                if matched == nil, let name = nodePlayIDFileName(fromPlayID: playID) {
+                    matched = entries.firstIndex(where: { $0.name == name })
+                    if let m = matched {
+                        log("[Node] ⚠️ \(driveType.displayName) playID 整串/fileId 均未命中，已按文件名匹配到 index=\(m)")
+                    }
+                }
+                guard let idx = matched else {
                     log("[Node] ❌ \(driveType.displayName) 详情页指定剧集未命中文件列表")
                     throw NodePanError.nodeRejected("详情页指定剧集未命中文件列表")
                 }
@@ -3636,6 +3652,43 @@ class PlayerState: ObservableObject {
         }
     }
     
+    // MARK: - Node playID 稳定匹配辅助
+
+    /// 从 Node playID（base64 JSON）中解析稳定文件标识（fileId，其次 playToken.fid）。
+    /// 用于跨次解析匹配同一文件：Node 每次 detail 都会重新生成 playToken，
+    /// 导致同一文件的 playID 整串不同，不能只靠整串相等定位。
+    private func nodeStableFileKey(fromPlayID playID: String) -> String? {
+        guard let obj = Self.decodeNodePlayIDObject(playID) else { return nil }
+        if let fid = obj["fileId"] as? String, !fid.isEmpty { return fid }
+        if let token = obj["playToken"] as? String,
+           let tokenObj = Self.decodeJSONObject(token),
+           let fid = tokenObj["fid"] as? String, !fid.isEmpty {
+            return fid
+        }
+        return nil
+    }
+
+    /// 从 Node playID 中解析展示文件名（最后兜底匹配用）
+    private func nodePlayIDFileName(fromPlayID playID: String) -> String? {
+        Self.decodeNodePlayIDObject(playID)?["name"] as? String
+    }
+
+    /// playID base64 → JSON 字典；兼容 data URL 前缀，以及 "+" 被当作空格解码的情况
+    private static func decodeNodePlayIDObject(_ playID: String) -> [String: Any]? {
+        var source = playID.replacingOccurrences(of: " ", with: "+")
+        if let range = source.range(of: "base64,") {
+            source = String(source[range.upperBound...])
+        }
+        guard let data = Data(base64Encoded: source, options: .ignoreUnknownCharacters) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    /// JSON 字符串（playToken 是嵌套 JSON 文本）→ 字典
+    private static func decodeJSONObject(_ jsonString: String) -> [String: Any]? {
+        guard let data = jsonString.data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
     private func playDriveVideo(url: String, headers: [String: String], driveType: DriveTypeAlias? = nil) async {
         guard !Task.isCancelled else {
             log("[PlayerV2] 已取消的网盘播放任务，跳过播放器提交")

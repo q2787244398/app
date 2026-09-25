@@ -1953,7 +1953,7 @@ struct CloudAuthCenterView: View {
                 Button(action: { showQuarkNativeQR = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "qrcode")
-                        Text("扫码登录（原生/Node）")
+                        Text("扫码登录")
                             .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundColor(.white)
