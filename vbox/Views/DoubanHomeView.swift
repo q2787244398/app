@@ -382,6 +382,7 @@ struct CategoryTilesView: View {
         ("top250", "🏆", "榜单"), ("animation", "🎨", "动漫"), ("hot", "🔥", "热门")
     ]
     @State private var selectedCategory: CategorySheetItem?
+    @State private var activeType: String?
 
     struct CategorySheetItem: Identifiable {
         let id = UUID()
@@ -391,9 +392,15 @@ struct CategoryTilesView: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 ForEach(categories, id: \.0) { item in
-                    CategoryTile(icon: item.1, title: item.2, settings: settings) {
+                    CategoryTile(
+                        icon: item.1,
+                        title: item.2,
+                        isSelected: activeType == item.0,
+                        settings: settings
+                    ) {
+                        activeType = item.0
                         selectedCategory = CategorySheetItem(type: item.0, name: item.2)
                     }
                 }
@@ -412,28 +419,32 @@ struct CategoryTilesView: View {
 struct CategoryTile: View {
     let icon: String
     let title: String
+    let isSelected: Bool
     let settings: AppSettings
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 6) {
-                Text(icon).font(.system(size: 28))
+            HStack(spacing: 6) {
+                Text(icon).font(.system(size: 14))
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.primary)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(isSelected ? Color.white : Color.primary)
             }
-            .frame(width: 80, height: 70)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(tileBackground)
+                Capsule().fill(isSelected ? Color(hex: "34C759") : tileBackground)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(settings.usesVisualSkin ? Color.white.opacity(0.2) : Color.gray.opacity(0.15), lineWidth: 1)
+                Capsule().stroke(isSelected ? Color(hex: "34C759").opacity(0.7) : borderColor, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var borderColor: Color {
+        settings.usesVisualSkin ? Color.white.opacity(0.2) : Color.gray.opacity(0.15)
     }
 
     private var tileBackground: Color {

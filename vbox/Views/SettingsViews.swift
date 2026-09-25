@@ -2336,23 +2336,40 @@ struct CloudAuthCenterView: View {
     }
 
     private func deleteEmbyServer() async {
-        guard !embyServers.isEmpty else { embyMessage = "还没有配置 Emby 服务器"; return }
-        let index = embySelectedIndex
-        guard index >= 0 && index < embyServers.count else { embyMessage = "服务器序号无效"; return }
         embyBusy = true
+        defer { embyBusy = false }
         do {
+            // 删除前先同步 Node 端最新列表，避免本地序号与 Node 数据错位导致删除失败
+            let latestServers = try await EmbyConfigService.fetchServers()
+            embyServers = latestServers
+            if embyEditingIndex >= latestServers.count { embyEditingIndex = -1 }
+
+            guard !latestServers.isEmpty else {
+                embyMessage = "还没有配置 Emby 服务器"
+                return
+            }
+            let index = embySelectedIndex
+            guard index >= 0 && index < latestServers.count else {
+                embyMessage = "服务器序号无效（本地与 Node 数据不同步，请重试）"
+                return
+            }
             try await EmbyConfigService.delete(index: index)
-            embyServers.remove(at: index)
+            var list = latestServers
+            list.remove(at: index)
             if embyEditingIndex == index {
                 embyEditingIndex = -1
             } else if embyEditingIndex > index {
                 embyEditingIndex -= 1
             }
+            // 与 Node 端保持一致：若无默认服务器则回退为第一个
+            if !list.isEmpty && !list.contains(where: { $0.choose == 1 }) {
+                list[0].choose = 1
+            }
+            embyServers = list
             embyMessage = "服务器已删除"
         } catch {
             embyMessage = "删除失败：\(error.localizedDescription)"
         }
-        embyBusy = false
     }
 
     private func authSubtitle(for type: CloudDriveManager.DriveType, fallback: String) -> String {
@@ -2531,8 +2548,19 @@ enum EmbyConfigService {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw EmbyError(message: "Node 返回异常状态码")
+        guard let http = response as? HTTPURLResponse else {
+            throw EmbyError(message: "Node 返回无效响应")
+        }
+        guard (200...299).contains(http.statusCode) else {
+            // Fastify 错误体形如 {statusCode, error, message}，尽量透出具体原因
+            let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if let msg = body?["message"] as? String, !msg.isEmpty {
+                throw EmbyError(message: msg)
+            }
+            if let msg = body?["msg"] as? String, !msg.isEmpty {
+                throw EmbyError(message: msg)
+            }
+            throw EmbyError(message: "Node 返回异常状态码（HTTP \(http.statusCode)）")
         }
         guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw EmbyError(message: "Node 返回格式异常")
