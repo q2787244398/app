@@ -1188,10 +1188,22 @@ class PlayerState: ObservableObject {
             if isVLCBuildAvailable {
                 return "VLC"
             }
+            // 兜底也不要让 Node 代理流落到 MPV-MoltenVK
+            if isNodePanProxyURL(url) {
+                if isMDKBuildAvailable { return "MDK" }
+                if isIJKBuildAvailable { return "IJKPlayer" }
+                return "VLC"
+            }
             return isMPVBuildAvailable ? "MPV-MoltenVK" : "VLC"
         case .system:
             return "系统"
         }
+    }
+
+    /// Node 常驻系统代理流（/spider/push/4/proxy/<provider>/…）：URL 无扩展名
+    private func isNodePanProxyURL(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return url.host == "127.0.0.1" && url.path.contains("/spider/push/")
     }
 
     private func shouldPreferMDK(for url: URL?) -> Bool {
@@ -1202,12 +1214,18 @@ class PlayerState: ObservableObject {
         // MDK 已针对夸克流配置 VT 硬解(m3u8)/FFmpeg软解(download_url) + 缓冲预热
         if text.contains("quark-m3u8") || text.contains("quark-stream") { return true }
         if text.contains("baidu-stream") { return true }
+        // Node 常驻代理流统一交给 MDK：MPV-MoltenVK 在该流上会"只有声音没有画面"
+        // 并在 mpv_initialize 阶段触发崩溃，禁止自动选中。
+        if isNodePanProxyURL(url) { return true }
         if text.contains(".mkv") || text.contains("mkv") { return true }
         return false
     }
 
     private func shouldPreferMPV(for url: URL?) -> Bool {
         guard isMPVBuildAvailable else { return false }
+        // Node 常驻代理流（/spider/push/4/proxy/…）在 MPV-MoltenVK 上会只有声音没有
+        // 画面并闪退，自动模式下永不选中（手动指定 .mpv 仍尊重用户选择）。
+        if isNodePanProxyURL(url) { return false }
         guard let url else { return compatibilityHint != nil }
         let text = url.absoluteString.lowercased()
         // 百度原画走 MPV，夸克已优先 IJK
@@ -3806,7 +3824,7 @@ class PlayerState: ObservableObject {
         let isQuarkM3U8LocalProxy = urlObj.host == "127.0.0.1" && urlObj.path.contains("quark-m3u8")
         // Node 常驻系统代理流（/spider/push/4/proxy/<provider>/…）：URL 无扩展名，
         // 无法从 URL 判断封装，需要结合真实文件名决定内核
-        let isNodePanProxy = urlObj.host == "127.0.0.1" && urlObj.path.contains("/spider/push/")
+        let isNodePanProxy = isNodePanProxyURL(urlObj)
         // Node 网盘传入真实文件名后优先用它（代理 URL 的 lastPathComponent 是随机 uuid）
         let resourceName = resourceNameHint ?? currentPlaybackResourceName(fallbackURL: urlObj, originalURL: url)
         let playlistKind = await probeM3U8IfNeeded(url: urlObj, headers: headers)
@@ -3921,14 +3939,16 @@ class PlayerState: ObservableObject {
             // Node 托管网盘（115/123/139/189/迅雷/光鸭/蜗牛/夸克Node）：
             // 代理 URL 无扩展名，AVPlayer 无法识别封装会报 -11828/-12847；
             // 真实文件名命中 MKV/HEVC/HDR/DDP 等复杂封装时强制兼容内核。
-            let nodeEngine = await MainActor.run { () -> String in
-                guard playbackSessionId == sessionId else { return preferredCompatibilityEngineName(for: urlObj) }
+            // 必须先解析内核名再写 compatibilityHint：否则 hint 里的 "MKV" 会让
+            // shouldPreferMPV 反过来命中 MPV-MoltenVK（该内核在这些代理流上
+            // 只有声音没有画面，并在 mpv_initialize 阶段闪退）。
+            let nodeEngine = preferredCompatibilityEngineName(for: urlObj)
+            await MainActor.run {
+                guard playbackSessionId == sessionId else { return }
                 playbackEngineMode = .compatibility
                 compatibilityHint = nodeReason
                 loadingMessage = "正在使用兼容内核..."
-                let engine = preferredCompatibilityEngineName(for: urlObj)
-                currentPiPStrategy = compatibilityPiPStrategy(engineName: engine, url: urlObj)
-                return engine
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: nodeEngine, url: urlObj)
             }
             logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: nodeEngine, reason: "Node网盘代理命中\(nodeReason)")
             log("[Node] 真实文件名命中\(nodeReason)，代理 URL 无扩展名，强制兼容内核：\(nodeEngine)")
@@ -4565,6 +4585,14 @@ class PlayerState: ObservableObject {
     private func switchAVPlayerVideoTrackFailureToMPV(url: URL, headers: [String: String]) {
         guard enginePreference != .system, isMPVBuildAvailable else {
             log("[PlayerV2] 当前构建/策略无法自动切 MPV，保留系统内核")
+            return
+        }
+
+        // Node 常驻代理流：MPV-MoltenVK 上只有声音没有画面并会闪退，
+        // 自动模式下改走 Node 安全内核（MDK/IJK/VLC）。手动指定 .mpv 时仍尊重用户选择。
+        if enginePreference == .auto, isNodePanProxyURL(url) {
+            log("[Node] 系统内核有进度但无视频画面，且属于 Node 代理流，改走兼容内核而非 MPV")
+            switchNodeAVPlayerFailureToCompatibility(url: url, headers: headers, reason: "系统内核有进度但无视频画面")
             return
         }
 
