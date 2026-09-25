@@ -107,6 +107,11 @@ struct VboxSplashView: View {
         colorScheme == .light ? Color.black.opacity(0.18) : Color.white.opacity(0.25)
     }
 
+    // 软件版本号：直接读 Info.plist，随构建版本自动变化（CI 递增后无需改代码）
+    private static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    }
+
     // ---- 动画状态 ----
     @State private var isAnimating = false       // 第一阶段：飞入聚合
     @State private var showGlow = false          // 聚合完成后发光
@@ -183,7 +188,7 @@ struct VboxSplashView: View {
                 value: floating
             )
 
-            // 底部小字
+            // 底部小字 + 软件版本号（聚合完成后一起淡入）
             VStack {
                 Spacer()
                 VStack(spacing: 6) {
@@ -194,10 +199,20 @@ struct VboxSplashView: View {
                 .tracking(2)
                 .foregroundColor(subtitleColor)
                 .multilineTextAlignment(.center)
-                .padding(.bottom, 80)
-                .opacity(showGlow ? 1 : 0)
-                .animation(.easeIn(duration: 0.4).delay(0.5), value: showGlow)
+
+                // 版本号：读取 Info.plist 的 CFBundleShortVersionString，
+                // 构建时 CI 递增版本后自动跟随，无需手改。取不到时不显示。
+                if !Self.appVersion.isEmpty {
+                    Text(Self.appVersion)
+                        .font(.system(size: 11, weight: .regular))
+                        .tracking(1)
+                        .foregroundColor(subtitleColor.opacity(0.75))
+                        .padding(.top, 14)
+                }
             }
+            .padding(.bottom, 80)
+            .opacity(showGlow ? 1 : 0)
+            .animation(.easeIn(duration: 0.4).delay(0.5), value: showGlow)
         }
         .onAppear {
             startAnimation()
