@@ -276,6 +276,8 @@ struct HomeView: View {
     @State private var japaneseTV: [DoubanSubject]                   // 热门日剧
     @State private var currentIndex = 0
     @State private var loadTask: Task<Void, Never>? = nil
+    /// 冷启动懒加载：已触发过加载的栏目 key（防止 onAppear 重复请求）
+    @State private var lazyLoadedSections: Set<String> = []
 
     init() {
         _isLoading = State(initialValue: !Self.hasHomeCache)
@@ -397,25 +399,34 @@ struct HomeView: View {
                             HorizontalSubjectRow(subjects: showingMovies, settings: settings)
                         }
                         // 2. 即将上映
-                        if !comingSoon.isEmpty {
-                            SectionHeader(title: "即将上映", icon: "calendar.badge.clock")
-                            HorizontalSubjectRow(subjects: comingSoon, settings: settings)
+                        Group {
+                            if !comingSoon.isEmpty {
+                                SectionHeader(title: "即将上映", icon: "calendar.badge.clock")
+                                HorizontalSubjectRow(subjects: comingSoon, settings: settings)
+                            }
                         }
+                        .onAppear { Task { await loadSectionIfNeeded(.comingSoon) } }
                         // 3. 热门电影
                         if !hotMovies.isEmpty {
                             SectionHeader(title: "热门电影", icon: "flame.fill")
                             HorizontalSubjectRow(subjects: hotMovies, settings: settings)
                         }
                         // 4. 一周口碑榜
-                        if !movieWeekly.isEmpty {
-                            SectionHeader(title: "一周口碑榜", icon: "star.fill")
-                            HorizontalSubjectRow(subjects: movieWeekly, settings: settings)
+                        Group {
+                            if !movieWeekly.isEmpty {
+                                SectionHeader(title: "一周口碑榜", icon: "star.fill")
+                                HorizontalSubjectRow(subjects: movieWeekly, settings: settings)
+                            }
                         }
+                        .onAppear { Task { await loadSectionIfNeeded(.movieWeekly) } }
                         // 5. 新片榜
-                        if !latestMovies.isEmpty {
-                            SectionHeader(title: "新片榜", icon: "sparkles")
-                            HorizontalSubjectRow(subjects: latestMovies, settings: settings)
+                        Group {
+                            if !latestMovies.isEmpty {
+                                SectionHeader(title: "新片榜", icon: "sparkles")
+                                HorizontalSubjectRow(subjects: latestMovies, settings: settings)
+                            }
                         }
+                        .onAppear { Task { await loadSectionIfNeeded(.latestMovies) } }
                         // 6. TOP250
                         if !top250.isEmpty {
                             SectionHeader(title: "TOP250", icon: "crown.fill")
@@ -427,25 +438,37 @@ struct HomeView: View {
                             HorizontalSubjectRow(subjects: hotTV, settings: settings)
                         }
                         // 8. 华语口碑剧集
-                        if !chiTV.isEmpty {
-                            SectionHeader(title: "华语口碑剧集", icon: "flag.fill")
-                            HorizontalSubjectRow(subjects: chiTV, settings: settings)
+                        Group {
+                            if !chiTV.isEmpty {
+                                SectionHeader(title: "华语口碑剧集", icon: "flag.fill")
+                                HorizontalSubjectRow(subjects: chiTV, settings: settings)
+                            }
                         }
+                        .onAppear { Task { await loadSectionIfNeeded(.chiTV) } }
                         // 9. 值得看的英美剧
-                        if !americanTV.isEmpty {
-                            SectionHeader(title: "值得看的英美剧", icon: "globe")
-                            HorizontalSubjectRow(subjects: americanTV, settings: settings)
+                        Group {
+                            if !americanTV.isEmpty {
+                                SectionHeader(title: "值得看的英美剧", icon: "globe")
+                                HorizontalSubjectRow(subjects: americanTV, settings: settings)
+                            }
                         }
+                        .onAppear { Task { await loadSectionIfNeeded(.americanTV) } }
                         // 10. 热门动漫
-                        if !hotAnimation.isEmpty {
-                            SectionHeader(title: "热门动漫", icon: "paintbrush.fill")
-                            HorizontalSubjectRow(subjects: hotAnimation, settings: settings)
+                        Group {
+                            if !hotAnimation.isEmpty {
+                                SectionHeader(title: "热门动漫", icon: "paintbrush.fill")
+                                HorizontalSubjectRow(subjects: hotAnimation, settings: settings)
+                            }
                         }
+                        .onAppear { Task { await loadSectionIfNeeded(.hotAnimation) } }
                         // 11. 热门综艺
-                        if !hotVariety.isEmpty {
-                            SectionHeader(title: "热门综艺", icon: "theatermasks.fill")
-                            HorizontalSubjectRow(subjects: hotVariety, settings: settings)
+                        Group {
+                            if !hotVariety.isEmpty {
+                                SectionHeader(title: "热门综艺", icon: "theatermasks.fill")
+                                HorizontalSubjectRow(subjects: hotVariety, settings: settings)
+                            }
                         }
+                        .onAppear { Task { await loadSectionIfNeeded(.hotVariety) } }
                     }
                 }
             }
@@ -685,71 +708,75 @@ struct HomeView: View {
             }
 
             // 第二梯队：其他分类，错峰请求避免限流
-            async let soon = fetchSafely { try await doubanService.fetchComingSoon(start: 0, count: 20) }
-            async let weekly = fetchSafely { try await doubanService.fetchMovieWeekly(start: 0, count: 20) }
-            async let latest = fetchSafely { try await doubanService.fetchLatestMovies(start: 0, count: 20) }
-            async let chi = fetchSafely { try await doubanService.fetchPopularChiTV(start: 0, count: 20) }
-            async let american = fetchSafely { try await doubanService.fetchAmericanTV(start: 0, count: 20) }
-            async let anim = fetchSafely { try await doubanService.fetchHotAnimation(start: 0, count: 20) }
-            async let korean = fetchSafely { try await doubanService.fetchKoreanTV(start: 0, count: 20) }
-            async let japanese = fetchSafely { try await doubanService.fetchJapaneseTV(start: 0, count: 20) }
-            async let variety = fetchSafely { try await doubanService.fetchHotVariety(start: 0, count: 20) }
+            // 冷启动（force=false）不在此全量拉取，改由各栏目 onAppear 懒加载（loadSectionIfNeeded），
+            // 降低首屏请求并发与内存峰值；下拉刷新（force=true）仍全量拉取，保持原行为。
+            if force {
+                async let soon = fetchSafely { try await doubanService.fetchComingSoon(start: 0, count: 20) }
+                async let weekly = fetchSafely { try await doubanService.fetchMovieWeekly(start: 0, count: 20) }
+                async let latest = fetchSafely { try await doubanService.fetchLatestMovies(start: 0, count: 20) }
+                async let chi = fetchSafely { try await doubanService.fetchPopularChiTV(start: 0, count: 20) }
+                async let american = fetchSafely { try await doubanService.fetchAmericanTV(start: 0, count: 20) }
+                async let anim = fetchSafely { try await doubanService.fetchHotAnimation(start: 0, count: 20) }
+                async let korean = fetchSafely { try await doubanService.fetchKoreanTV(start: 0, count: 20) }
+                async let japanese = fetchSafely { try await doubanService.fetchJapaneseTV(start: 0, count: 20) }
+                async let variety = fetchSafely { try await doubanService.fetchHotVariety(start: 0, count: 20) }
 
-            let soonResult = await soon
-            guard !Task.isCancelled else { return }
-            let weeklyResult = await weekly
-            guard !Task.isCancelled else { return }
-            let latestResult = await latest
-            guard !Task.isCancelled else { return }
-            let chiResult = await chi
-            guard !Task.isCancelled else { return }
-            let americanResult = await american
-            guard !Task.isCancelled else { return }
-            let animResult = await anim
-            guard !Task.isCancelled else { return }
-            let koreanResult = await korean
-            guard !Task.isCancelled else { return }
-            let japaneseResult = await japanese
-            guard !Task.isCancelled else { return }
-            let varietyResult = await variety
-            guard !Task.isCancelled else { return }
+                let soonResult = await soon
+                guard !Task.isCancelled else { return }
+                let weeklyResult = await weekly
+                guard !Task.isCancelled else { return }
+                let latestResult = await latest
+                guard !Task.isCancelled else { return }
+                let chiResult = await chi
+                guard !Task.isCancelled else { return }
+                let americanResult = await american
+                guard !Task.isCancelled else { return }
+                let animResult = await anim
+                guard !Task.isCancelled else { return }
+                let koreanResult = await korean
+                guard !Task.isCancelled else { return }
+                let japaneseResult = await japanese
+                guard !Task.isCancelled else { return }
+                let varietyResult = await variety
+                guard !Task.isCancelled else { return }
 
-            // 第二梯队：有数据才更新，空数据保留旧值（防止限流导致页面空白）
-            if !soonResult.isEmpty {
-                comingSoon = soonResult
-                Self.cachedComingSoon = soonResult
-            }
-            if !weeklyResult.isEmpty {
-                movieWeekly = weeklyResult
-                Self.cachedMovieWeekly = weeklyResult
-            }
-            if !latestResult.isEmpty {
-                latestMovies = latestResult
-                Self.cachedLatestMovies = latestResult
-            }
-            if !chiResult.isEmpty {
-                chiTV = chiResult
-                Self.cachedChiTV = chiResult
-            }
-            if !americanResult.isEmpty {
-                americanTV = americanResult
-                Self.cachedAmericanTV = americanResult
-            }
-            if !animResult.isEmpty {
-                hotAnimation = animResult
-                Self.cachedHotAnimation = animResult
-            }
-            if !koreanResult.isEmpty {
-                koreanTV = koreanResult
-                Self.cachedKoreanTV = koreanResult
-            }
-            if !japaneseResult.isEmpty {
-                japaneseTV = japaneseResult
-                Self.cachedJapaneseTV = japaneseResult
-            }
-            if !varietyResult.isEmpty {
-                hotVariety = varietyResult
-                Self.cachedHotVariety = varietyResult
+                // 第二梯队：有数据才更新，空数据保留旧值（防止限流导致页面空白）
+                if !soonResult.isEmpty {
+                    comingSoon = soonResult
+                    Self.cachedComingSoon = soonResult
+                }
+                if !weeklyResult.isEmpty {
+                    movieWeekly = weeklyResult
+                    Self.cachedMovieWeekly = weeklyResult
+                }
+                if !latestResult.isEmpty {
+                    latestMovies = latestResult
+                    Self.cachedLatestMovies = latestResult
+                }
+                if !chiResult.isEmpty {
+                    chiTV = chiResult
+                    Self.cachedChiTV = chiResult
+                }
+                if !americanResult.isEmpty {
+                    americanTV = americanResult
+                    Self.cachedAmericanTV = americanResult
+                }
+                if !animResult.isEmpty {
+                    hotAnimation = animResult
+                    Self.cachedHotAnimation = animResult
+                }
+                if !koreanResult.isEmpty {
+                    koreanTV = koreanResult
+                    Self.cachedKoreanTV = koreanResult
+                }
+                if !japaneseResult.isEmpty {
+                    japaneseTV = japaneseResult
+                    Self.cachedJapaneseTV = japaneseResult
+                }
+                if !varietyResult.isEmpty {
+                    hotVariety = varietyResult
+                    Self.cachedHotVariety = varietyResult
+                }
             }
 
             // Banner 随机抽取：从所有已加载分类中汇总，随机选取 6~8 条
@@ -773,6 +800,17 @@ struct HomeView: View {
             isLoading = false
             // 首页已有可展示数据：通知启动页淡出进入首页
             SplashGateMonitor.shared.markHomeReady()
+
+            // 冷启动兜底：空栏目在 LazyVStack 中高度为 0，onAppear 可能不触发，
+            // 延迟 1.5s 错峰补齐全部懒加载栏目（loadSectionIfNeeded 防重入，onAppear 已加载的自动跳过）
+            if !force {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { return }
+                for key in HomeSectionKey.allCases {
+                    guard !Task.isCancelled else { return }
+                    await loadSectionIfNeeded(key)
+                }
+            }
 
             // 异步获取横版海报 URL，逐条更新 + 预缓存前 3 张
             await fetchBackdropURLs()
@@ -809,6 +847,50 @@ struct HomeView: View {
         }
     }
 
+    // MARK: - 冷启动栏目懒加载（B 轻量版）
+
+    /// 懒加载栏目标识：对应 doubanHomeContent 中除第一梯队外的可显示栏目
+    private enum HomeSectionKey: String, CaseIterable {
+        case comingSoon     // 即将上映
+        case movieWeekly    // 一周口碑榜
+        case latestMovies   // 新片榜
+        case chiTV          // 华语口碑剧集
+        case americanTV     // 值得看的英美剧
+        case hotAnimation   // 热门动漫
+        case hotVariety     // 热门综艺
+    }
+
+    /// 栏目滚入视野时触发一次加载（onAppear 调用，防重入）
+    @MainActor
+    private func loadSectionIfNeeded(_ key: HomeSectionKey) async {
+        guard !lazyLoadedSections.contains(key.rawValue) else { return }
+        lazyLoadedSections.insert(key.rawValue)
+
+        switch key {
+        case .comingSoon:
+            let r = await fetchSafely { try await doubanService.fetchComingSoon(start: 0, count: 20) }
+            if !r.isEmpty { comingSoon = r; Self.cachedComingSoon = r }
+        case .movieWeekly:
+            let r = await fetchSafely { try await doubanService.fetchMovieWeekly(start: 0, count: 20) }
+            if !r.isEmpty { movieWeekly = r; Self.cachedMovieWeekly = r }
+        case .latestMovies:
+            let r = await fetchSafely { try await doubanService.fetchLatestMovies(start: 0, count: 20) }
+            if !r.isEmpty { latestMovies = r; Self.cachedLatestMovies = r }
+        case .chiTV:
+            let r = await fetchSafely { try await doubanService.fetchPopularChiTV(start: 0, count: 20) }
+            if !r.isEmpty { chiTV = r; Self.cachedChiTV = r }
+        case .americanTV:
+            let r = await fetchSafely { try await doubanService.fetchAmericanTV(start: 0, count: 20) }
+            if !r.isEmpty { americanTV = r; Self.cachedAmericanTV = r }
+        case .hotAnimation:
+            let r = await fetchSafely { try await doubanService.fetchHotAnimation(start: 0, count: 20) }
+            if !r.isEmpty { hotAnimation = r; Self.cachedHotAnimation = r }
+        case .hotVariety:
+            let r = await fetchSafely { try await doubanService.fetchHotVariety(start: 0, count: 20) }
+            if !r.isEmpty { hotVariety = r; Self.cachedHotVariety = r }
+        }
+    }
+
     private func restoreHomeCache() {
         bannerItems = Self.cachedBannerItems
         showingMovies = Self.cachedShowingMovies
@@ -825,6 +907,8 @@ struct HomeView: View {
         japaneseTV = Self.cachedJapaneseTV
         hotVariety = Self.cachedHotVariety
         isLoading = false
+        // 缓存已含全部栏目，无需再懒加载触发
+        lazyLoadedSections = Set(HomeSectionKey.allCases.map { $0.rawValue })
         // 首页有可展示数据：通知启动页可以淡出进入首页
         SplashGateMonitor.shared.markHomeReady()
     }

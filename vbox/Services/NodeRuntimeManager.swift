@@ -664,6 +664,8 @@ final class NodeRuntimeManager: ObservableObject {
 
     @objc private func handleMemoryWarning() {
         nodeLog(.warn, "🧹 内存告警：Node 常驻进程占用较大，建议重启 App 释放")
+        // 启动中/未就绪时收到内存告警，不覆盖启动状态（避免启动被误标为异常）
+        guard isSystemReady else { return }
         // 降级：不主动杀 Node（会丢失网盘会话），仅提示 + 状态标记
         statusInfo = "node-memory-warning"
         postStatus()

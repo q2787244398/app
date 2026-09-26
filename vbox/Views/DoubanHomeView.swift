@@ -464,7 +464,8 @@ struct HorizontalSubjectRow: View {
     var body: some View {
         ScrollViewReader { _ in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                // LazyHStack：卡片滚入视野才创建/解码图片，避免一行 20 张封面同时解码导致内存峰值
+                LazyHStack(spacing: 12) {
                     ForEach(Array(subjects.enumerated()), id: \.element.id) { index, subject in
                         SubjectCard(
                             subject: subject,

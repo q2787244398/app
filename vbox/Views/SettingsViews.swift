@@ -1774,6 +1774,10 @@ struct CloudAuthCenterView: View {
     }
 
     private var nodeRuntimeStatusInfo: (String, String, Color, String) {
+        // 内存告警优先于「就绪」展示：Node 本身可用，提示用户释放内存
+        if nodeRuntime.statusInfo == "node-memory-warning" {
+            return ("内存告警", "Node 仍可用，建议重启 App 释放内存", .orange, "exclamationmark.triangle.fill")
+        }
         if nodeRuntime.isSystemReady {
             return ("就绪", "端口 \(nodeRuntime.activePort) · 网盘解析链路可用", .green, "checkmark.circle.fill")
         }
