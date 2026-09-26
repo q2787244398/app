@@ -41,6 +41,8 @@ jobs:
       - name: Fetch + install MPVKit dependencies
         run: |
           bash scripts/fetch_mpv_dependencies.sh --cache-dir .mpv-cache
+        env:
+          MPVKIT_DEPS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check installed dependencies
         run: |

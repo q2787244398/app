@@ -37,6 +37,8 @@ jobs:
           bash scripts/fetch_mpv_dependencies.sh --cache-dir .mpv-cache
           python3 scripts/fetch_mpv_external_dependencies.py --all --cache-dir .mpv-cache/external
           python3 scripts/check_mpv_installed_dependencies.py
+        env:
+          MPVKIT_DEPS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Inject MPVKit Link & Embed
         run: |
