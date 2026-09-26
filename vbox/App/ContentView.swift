@@ -12,7 +12,7 @@ struct ContentView: View {
     @State private var showSplash: Bool = true
     @State private var splashAppearTime: Date = Date()
     @ObservedObject private var splashMonitor = SplashGateMonitor.shared
-    private let splashMinHold: TimeInterval = 1.2   // 最短展示时长，避免一闪而过
+    private let splashMinHold: TimeInterval = 3.5   // 最短展示时长，确保动态启动页动画完整播放
 
     enum Tab: String, CaseIterable {
         case home = "首页"

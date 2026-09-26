@@ -4,7 +4,7 @@
 //
 //  统一应用日志系统
 //  - 支持级别 (verbose/info/warn/error) + 模块分类
-//  - 内存环形缓冲 + 异步持久化 (保留最近 3 天)
+//  - 内存环形缓冲 + 异步持久化 (保留最近 3 小时)
 //  - 崩溃捕获 (信号处理器，崩溃前刷盘)
 //  - 筛选 / 搜索 / 导出
 //
@@ -150,10 +150,10 @@ final class AppLogStore: NSObject, ObservableObject {
     // MARK: - 配置
     
     /// 内存最大条数 (环形缓冲)
-    private let maxMemoryEntries = 10000
+    private let maxMemoryEntries = 20000
     
-    /// 持久化保留天数
-    private let persistDays = 1
+    /// 持久化保留时长 (天)，0.125 天 = 3 小时
+    private let persistDays = 0.125
     
     /// 刷盘间隔 (秒)
     private let flushInterval: TimeInterval = 10
@@ -655,20 +655,18 @@ final class AppLogStore: NSObject, ObservableObject {
         return entry
     }
     
-    /// 清理 N 天前的日志文件
+    /// 清理超出保留时长的日志文件（按最后写入时间判定，保留时长见 persistDays）
     private func cleanupOldLogs() {
         let fm = FileManager.default
         let dir = logsDirectory
-        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
         
-        let calendar = Calendar.current
-        let cutoff = calendar.date(byAdding: .day, value: -persistDays, to: Date()) ?? Date.distantPast
+        let retention: TimeInterval = persistDays * 86_400  // 0.125 天 = 3 小时
+        let cutoff = Date().addingTimeInterval(-retention)
         
         for file in files where file.pathExtension == "log" {
-            let fileName = file.deletingPathExtension().lastPathComponent
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            if let fileDate = fmt.date(from: fileName), fileDate < cutoff {
+            let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modDate < cutoff {
                 try? fm.removeItem(at: file)
             }
         }

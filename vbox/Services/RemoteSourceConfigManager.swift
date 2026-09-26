@@ -317,6 +317,16 @@ final class RemoteSourceConfigManager: ObservableObject {
         return url
     }
 
+    /// 读取缓存的 Node bundle 版本文件远端地址（版本探针用，NodeRuntimeManager 比对后决定是否下载）
+    nonisolated static func cachedNodeBundleVersionURL() -> URL? {
+        guard let stored = UserDefaults.standard.string(forKey: RemoteSourceConfigKeys.nodeBundleVer),
+              !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let url = URL(string: stored.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return nil
+        }
+        return url
+    }
+
     nonisolated static func currentDefaultManifestURL() -> String {
         guard let stored = UserDefaults.standard.string(forKey: RemoteSourceConfigKeys.defaultManifestURL) else {
             // 从未配置过，也没有内置默认 → 返回空串

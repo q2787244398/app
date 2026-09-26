@@ -114,6 +114,9 @@ final class NodeRuntimeManager: ObservableObject {
     /// 启动时是否要求从网络刷新 bundle（P1-03；断网回退本地缓存）
     private var bundleRefreshURL: URL?
 
+    /// 远端 bundle 版本文件地址（版本探针用，与 bundleRefreshURL 同源）
+    private var bundleVersionURL: URL?
+
     private init() {
         // 监听内存告警（P1-19）
         NotificationCenter.default.addObserver(
@@ -141,10 +144,12 @@ final class NodeRuntimeManager: ObservableObject {
 
     /// 启动 Node 常驻系统（App.init 调用）
     /// - Parameter bundleRefreshURL: 可选 bundle 远端地址（P1-03 拉取校验）
-    func start(bundleRefreshURL: URL? = nil) {
+    /// - Parameter bundleVersionURL: 可选 bundle 版本文件远端地址（版本探针）
+    func start(bundleRefreshURL: URL? = nil, bundleVersionURL: URL? = nil) {
         guard !isStarting, !hasStartedOnce else { return }
         isStarting = true
         self.bundleRefreshURL = bundleRefreshURL
+        self.bundleVersionURL = bundleVersionURL
         statusInfo = "node-starting"
         postStatus()
 
@@ -156,13 +161,13 @@ final class NodeRuntimeManager: ObservableObject {
                 // 2) bundle 完整性校验（manifest MD5），损坏自动回退资源（P1-03）
                 try verifyBundleIntegrity()
 
-                // 3) 若有远端 bundle 且网络可用，拉取校验 MD5 后落盘
-                if let url = bundleRefreshURL {
-                    try? await refreshBundleIfNeeded(from: url)
-                }
-
-                // 4) 设置环境变量并启动 Node 引擎（P1-18 端口一致性）
+                // 3) 先本地启动 Node 引擎（P1-18 端口一致性），避免等待远端 bundle 下载
                 launchNodeEngine()
+
+                // 4) 后台异步刷新远端 bundle（版本探针比对，一致则跳过下载；新版下次启动生效）
+                if let url = bundleRefreshURL {
+                    Task { try? await refreshBundleIfNeeded(from: url, versionURL: bundleVersionURL) }
+                }
 
                 // 5) 等待启动 ack（超时 45s，对齐 TVS 的启动等待策略；此时 ack 必为本次真实写入）
                 let ackOK = await waitForStartupAck(timeout: 45)
@@ -377,8 +382,30 @@ final class NodeRuntimeManager: ObservableObject {
 
     // MARK: - Bundle 远端刷新 + MD5 校验（P1-03）
 
-    private func refreshBundleIfNeeded(from url: URL) async throws {
+    /// 读取本地 manifest 记录的 bundle 版本（无记录返回 nil）
+    private func readLocalBundleVersion() -> String? {
+        readBundleManifest()?.version
+    }
+
+    private func refreshBundleIfNeeded(from url: URL, versionURL: URL? = nil) async throws {
         let fm = FileManager.default
+
+        // 版本探针：请求远端版本文件与本地记录比对，一致则跳过完整下载（大幅减少启动耗时）
+        var remoteVersion: String? = nil
+        if let vURL = versionURL,
+           let (vData, vResp) = try? await URLSession.shared.data(from: vURL),
+           let vHttp = vResp as? HTTPURLResponse, vHttp.statusCode == 200 {
+            remoteVersion = String(data: vData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let remoteVersion,
+           !remoteVersion.isEmpty,
+           remoteVersion == readLocalBundleVersion() {
+            nodeLog(.info, "✅ bundle 版本一致（\(remoteVersion)），无需更新")
+            return
+        }
+
+        // 版本不一致或探针失败，走完整下载（MD5 兜底比对）
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty else {
             nodeLog(.warn, "⚠️ bundle 拉取失败，回退本地缓存")
@@ -400,8 +427,8 @@ final class NodeRuntimeManager: ObservableObject {
         try data.write(to: tmpURL, options: .atomic)
         try? fm.removeItem(at: activeBundleURL)
         try fm.moveItem(at: tmpURL, to: activeBundleURL)
-        // 更新 manifest
-        writeBundleManifest(md5: md5, source: "remote", version: nil)
+        // 更新 manifest（记录远端版本，供下次版本探针比对）
+        writeBundleManifest(md5: md5, source: "remote", version: remoteVersion)
         nodeLog(.info, "✅ bundle 已更新 MD5=\(md5)")
     }
 
