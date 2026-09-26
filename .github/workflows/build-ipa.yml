@@ -924,6 +924,9 @@ jobs:
           cat release_notes.txt
 
       - name: 📤 Upload IPA
+        # artifact 配额可能已满（usage 每 6-12 小时才重新计算），失败不阻断：
+        # 最终 IPA 通过下方 "🚀 Release to A Repo" 上传到 release，不依赖 artifact。
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: vbox-ipa
@@ -932,6 +935,7 @@ jobs:
           retention-days: 7
 
       - name: 📤 Upload Release Notes
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: release-notes
@@ -976,17 +980,20 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Download IPA
-        uses: actions/download-artifact@v4
-        with:
-          name: vbox-ipa
-          path: ./vbox-ipa
-
-      - name: 📥 Download Release Notes
-        uses: actions/download-artifact@v4
-        with:
-          name: release-notes
-          path: ./release-notes
+      - name: 📥 Download IPA + Notes from A Repo Release
+        # 直接从 A 仓库 release 下载（release 存储不计入 Actions artifact 配额），
+        # 不依赖 upload-artifact，避免 artifact 配额满时同步失败。
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="v${{ needs.build.outputs.MARKETING_VERSION }}"
+          echo "从 $GITHUB_REPOSITORY 下载 Release $VERSION 资产"
+          mkdir -p ./vbox-ipa ./release-notes
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" -D ./vbox-ipa --pattern "*.ipa"
+          echo "✅ IPA 下载完成:"
+          ls -la ./vbox-ipa/
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json body -q '.body' > ./release-notes/release_notes.txt
+          echo "✅ Release Notes 已保存 (字节数: $(wc -c < ./release-notes/release_notes.txt))"
 
       - name: 🚀 Sync Release to B Repo
         env:
