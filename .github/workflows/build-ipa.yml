@@ -929,12 +929,14 @@ jobs:
           name: vbox-ipa
           path: vbox.ipa
           compression-level: 0
+          retention-days: 7
 
       - name: 📤 Upload Release Notes
         uses: actions/upload-artifact@v4
         with:
           name: release-notes
           path: release_notes.txt
+          retention-days: 7
 
       - name: 🚀 Release to A Repo
         run: |
