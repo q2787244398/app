@@ -1736,10 +1736,14 @@ globalThis.__JS_SPIDER__ = _spider;
                     }
 
                     if let list = result.list, !list.isEmpty {
-                        for var item in list {
-                            item.engineKey = key
+                        // 网盘类源（group == "cloud"）：首页数据强制 ☁️ 标记，详情页走网盘版式
+                        let isCloud = allSites.first(where: { $0.key == key })?.group == "cloud"
+                        var tagged = list
+                        for i in 0..<tagged.count {
+                            tagged[i].engineKey = key
+                            if isCloud { tagged[i].vodRemarks = "☁️" + (allSites.first(where: { $0.key == key })?.name ?? key) }
                         }
-                        videos.append(contentsOf: list)
+                        videos.append(contentsOf: tagged)
                         AppLogStore.shared.info(.spider, "[SpiderManager] 🏠 ✅ 首页[\(key)]: \(list.count)视频")
                         if videos.count >= 20 {
                             AppLogStore.shared.info(.spider, "[SpiderManager] 🏠 蜘蛛数据已足够，停止加载")
@@ -1839,8 +1843,12 @@ globalThis.__JS_SPIDER__ = _spider;
             do {
                 let result = try engine.callSearchContent(keyword: keyword, pg: pg)
                 if let items = result.list, !items.isEmpty {
+                    // 网盘类源（group == "cloud"）：强制 ☁️ 标记，详情页走网盘版式
+                    let isCloud = allSites.first(where: { $0.key == key })?.group == "cloud"
                     for var item in items {
-                        if item.vodRemarks == nil || item.vodRemarks?.isEmpty == true {
+                        if isCloud {
+                            item.vodRemarks = "☁️" + (allSites.first(where: { $0.key == key })?.name ?? key)
+                        } else if item.vodRemarks == nil || item.vodRemarks?.isEmpty == true {
                             item.vodRemarks = key
                         }
                         item.engineKey = key
@@ -2117,7 +2125,12 @@ globalThis.__JS_SPIDER__ = _spider;
                 print("[SpiderManager] spiderCategory[\(source.name)] 请求分类: tid=\(categoryTypeId), pg=\(page)")
                 let result = try engine.callCategoryContent(tid: categoryTypeId, pg: page, extend: "{}")
                 var list = result.list ?? []
-                for i in 0..<list.count { list[i].engineKey = key }
+                // 网盘类源（group == "cloud"）：分类内容强制 ☁️ 标记，详情页走网盘版式
+                let isCloud = allSites.first(where: { $0.key == key })?.group == "cloud"
+                for i in 0..<list.count {
+                    list[i].engineKey = key
+                    if isCloud { list[i].vodRemarks = "☁️" + source.name }
+                }
                 print("[SpiderManager] spiderCategory[\(source.name)] 返回 \(list.count) 条数据")
                 return list
             } catch {
@@ -2221,6 +2234,8 @@ globalThis.__JS_SPIDER__ = _spider;
                 let siteNameMap = Dictionary(uniqueKeysWithValues: spiderAllSites.compactMap { site in
                     engines.keys.contains(site.key) ? (site.key, site.name) : nil
                 })
+                // 网盘类源 key 集合（manifest group == "cloud"）：结果强制打 ☁️ 标记，详情页走网盘版式
+                let cloudSiteKeys = Set(spiderAllSites.filter { $0.group == "cloud" }.map { $0.key })
                 let engineEntries = Array(engines)
                 guard !engineEntries.isEmpty else { return }
 
@@ -2239,8 +2254,13 @@ globalThis.__JS_SPIDER__ = _spider;
                                     var tagged = items
                                     let name = siteNameMap[r.key] ?? r.key
                                     for i in 0..<tagged.count {
-                                        let original = tagged[i].vodRemarks ?? ""
-                                        tagged[i].vodRemarks = original.hasPrefix("☁️") ? "☁️" + name : name
+                                        if cloudSiteKeys.contains(r.key) {
+                                            // 网盘类源（group == "cloud"）：强制 ☁️ 标记，不依赖源名/原备注
+                                            tagged[i].vodRemarks = "☁️" + name
+                                        } else {
+                                            let original = tagged[i].vodRemarks ?? ""
+                                            tagged[i].vodRemarks = original.hasPrefix("☁️") ? "☁️" + name : name
+                                        }
                                     }
                                     log("✅ QuickJS[\(r.key)] +\(tagged.count)条")
                                     onBatch(tagged)
@@ -2270,8 +2290,13 @@ globalThis.__JS_SPIDER__ = _spider;
                             var tagged = items
                             let name = siteNameMap[r.key] ?? r.key
                             for i in 0..<tagged.count {
-                                let original = tagged[i].vodRemarks ?? ""
-                                tagged[i].vodRemarks = original.hasPrefix("☁️") ? "☁️" + name : name
+                                if cloudSiteKeys.contains(r.key) {
+                                    // 网盘类源（group == "cloud"）：强制 ☁️ 标记，不依赖源名/原备注
+                                    tagged[i].vodRemarks = "☁️" + name
+                                } else {
+                                    let original = tagged[i].vodRemarks ?? ""
+                                    tagged[i].vodRemarks = original.hasPrefix("☁️") ? "☁️" + name : name
+                                }
                                 tagged[i].engineKey = r.key
                             }
                             log("✅ QuickJS[\(r.key)] +\(tagged.count)条")
@@ -5525,7 +5550,12 @@ globalThis.__JS_SPIDER__ = _spider;
             let result = try engine.callHomeContent()
             let categories = result.class ?? []
             var list = result.list ?? []
-            for i in 0..<list.count { list[i].engineKey = key }
+            // 网盘类源（group == "cloud"）：首页推荐强制 ☁️ 标记，详情页走网盘版式
+            let isCloud = allSites.first(where: { $0.key == key })?.group == "cloud"
+            for i in 0..<list.count {
+                list[i].engineKey = key
+                if isCloud { list[i].vodRemarks = "☁️" + source.name }
+            }
 
             // 允许 list 为空：分类列表仍然可用，用户可切换分类浏览
             return SourceHomeData(
