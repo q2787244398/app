@@ -652,10 +652,10 @@ struct HomeView: View {
             isLoading = true
 
             // 第一梯队：核心分类，优先展示
-            async let showing = fetchSafely { try await doubanService.fetchUpcomingCN(start: 0, count: 10) }
-            async let movies = fetchSafely { try await doubanService.fetchHotMovies(start: 0, count: 10) }
-            async let tv = fetchSafely { try await doubanService.fetchHotTV(start: 0, count: 10) }
-            async let top = fetchSafely { try await doubanService.fetchTop250(start: 0, count: 10) }
+            async let showing = fetchSafely { try await doubanService.fetchUpcomingCN(start: 0, count: 20) }
+            async let movies = fetchSafely { try await doubanService.fetchHotMovies(start: 0, count: 20) }
+            async let tv = fetchSafely { try await doubanService.fetchHotTV(start: 0, count: 20) }
+            async let top = fetchSafely { try await doubanService.fetchTop250(start: 0, count: 20) }
 
             let showingResult = await showing
             guard !Task.isCancelled else { return }
@@ -685,15 +685,15 @@ struct HomeView: View {
             }
 
             // 第二梯队：其他分类，错峰请求避免限流
-            async let soon = fetchSafely { try await doubanService.fetchComingSoon(start: 0, count: 10) }
-            async let weekly = fetchSafely { try await doubanService.fetchMovieWeekly(start: 0, count: 10) }
-            async let latest = fetchSafely { try await doubanService.fetchLatestMovies(start: 0, count: 10) }
-            async let chi = fetchSafely { try await doubanService.fetchPopularChiTV(start: 0, count: 10) }
-            async let american = fetchSafely { try await doubanService.fetchAmericanTV(start: 0, count: 10) }
-            async let anim = fetchSafely { try await doubanService.fetchHotAnimation(start: 0, count: 10) }
-            async let korean = fetchSafely { try await doubanService.fetchKoreanTV(start: 0, count: 10) }
-            async let japanese = fetchSafely { try await doubanService.fetchJapaneseTV(start: 0, count: 10) }
-            async let variety = fetchSafely { try await doubanService.fetchHotVariety(start: 0, count: 10) }
+            async let soon = fetchSafely { try await doubanService.fetchComingSoon(start: 0, count: 20) }
+            async let weekly = fetchSafely { try await doubanService.fetchMovieWeekly(start: 0, count: 20) }
+            async let latest = fetchSafely { try await doubanService.fetchLatestMovies(start: 0, count: 20) }
+            async let chi = fetchSafely { try await doubanService.fetchPopularChiTV(start: 0, count: 20) }
+            async let american = fetchSafely { try await doubanService.fetchAmericanTV(start: 0, count: 20) }
+            async let anim = fetchSafely { try await doubanService.fetchHotAnimation(start: 0, count: 20) }
+            async let korean = fetchSafely { try await doubanService.fetchKoreanTV(start: 0, count: 20) }
+            async let japanese = fetchSafely { try await doubanService.fetchJapaneseTV(start: 0, count: 20) }
+            async let variety = fetchSafely { try await doubanService.fetchHotVariety(start: 0, count: 20) }
 
             let soonResult = await soon
             guard !Task.isCancelled else { return }

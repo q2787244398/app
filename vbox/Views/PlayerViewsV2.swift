@@ -3985,6 +3985,24 @@ class PlayerState: ObservableObject {
             }
             logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: baiduNodeProxyEngine, reason: "百度网盘Node 代理流禁止 AVPlayer（MDK 优先，禁用 MPV）")
             log("[BaiduNode] 自动模式下 百度网盘Node 代理流强制兼容内核（MDK 优先，禁用 MPV）：\(baiduNodeProxyEngine)")
+        } else if enginePreference == .auto, driveType == .quarkNode, isNodePanProxy,
+                  (isMDKBuildAvailable || isIJKBuildAvailable || isVLCBuildAvailable) {
+            // 夸克网盘Node 的 Node 代理流（/spider/push/4/proxy/quark/…，非 quark-stream 本地代理）：
+            // 文件名不命中复杂封装规则（如 [xxx]01_4K.mp4，nodeCompatibilityReason 刻意不含 "4k"）
+            // 时会落到默认 AVPlayer。AVPlayer 在 Node 代理的 4K 高码率流上表现为"有声音有进度但
+            // 无画面"，且首帧兜底检测因尺寸非 0、视频轨存在而无法自动纠正。
+            // 方案：直接走兼容内核（MDK 优先，禁用 MPV-MoltenVK），跳过 AVPlayer 阶段。
+            let quarkNodeProxyEngine = isMDKBuildAvailable ? "MDK"
+                : (isIJKBuildAvailable ? "IJKPlayer" : "VLC")
+            await MainActor.run {
+                guard playbackSessionId == sessionId else { return }
+                playbackEngineMode = .compatibility
+                compatibilityHint = "夸克网盘Node代理流"
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: quarkNodeProxyEngine, url: urlObj)
+                loadingMessage = "正在使用兼容内核..."
+            }
+            logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: playlistKind, engine: quarkNodeProxyEngine, reason: "夸克网盘Node 代理流禁止 AVPlayer（MDK 优先，禁用 MPV）")
+            log("[QuarkNode] 自动模式下 夸克网盘Node 代理流强制兼容内核（MDK 优先，禁用 MPV）：\(quarkNodeProxyEngine)")
         } else if isBaiduLocalProxy && enginePreference == .auto {
             // 百度网盘资源一律优先兼容内核，禁止自动模式再尝试 AVPlayer 主播放链路。
             // 原因：百度本地代理 + 鉴权 + 大文件加载会导致 AVPlayer 启动慢/超时，影响用户播放体验。
