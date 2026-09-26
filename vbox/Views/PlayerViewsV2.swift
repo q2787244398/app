@@ -4697,10 +4697,13 @@ class PlayerState: ObservableObject {
             return
         }
 
-        // Node 常驻代理流：MPV-MoltenVK 上只有声音没有画面并会闪退，
-        // 自动模式下改走 Node 安全内核（MDK/IJK/VLC）。手动指定 .mpv 时仍尊重用户选择。
-        if enginePreference == .auto, isNodePanProxyURL(url) {
-            log("[Node] 系统内核有进度但无视频画面，且属于 Node 代理流，改走兼容内核而非 MPV")
+        // 自动模式下，无论是否 Node 代理流，系统内核无画面统一回退安全兼容内核（MDK/IJK/VLC），
+        // 不再切 MPV-MoltenVK：MPV-MoltenVK 在 Node 代理流及部分解析 m3u8 上只有声音没有画面，
+        // 且 mpv_initialize 失败会 exit() → 静态析构 SIGSEGV / GPU 驱动冲突直接闪退（无 crash log）。
+        // preferredCompatibilityEngineName 内部仍会对 baidu-stream 等应走 MPV 的流返回 MPV。
+        // 手动指定 .mpv 时仍尊重用户选择。
+        if enginePreference == .auto {
+            log("[PlayerV2] 系统内核有进度但无视频画面，改走兼容内核而非 MPV")
             switchNodeAVPlayerFailureToCompatibility(url: url, headers: headers, reason: "系统内核有进度但无视频画面")
             return
         }

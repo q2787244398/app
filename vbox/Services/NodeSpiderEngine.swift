@@ -138,8 +138,11 @@ final class NodeSpiderEngine: SpiderEngineProtocol {
     }
 
     func callPlayerContent(vodId: String, flag: String, url: String) throws -> PlayerContentResult {
-        // 同上：bundle play 读 body.id（Od: String(w.body?.id)，AppV7: String(c.id)）
-        let params: [String: Any] = ["id": vodId, "ids": vodId, "flag": flag, "url": url]
+        // 🔧 修复 (2026-09-26): bundle 蜘蛛 play 方法统一读 body.id 作为播放地址
+        // （如枫叶 async play(t){ bqt(r5(t.body.id)) }、AppV7 读 c.id），
+        // 必须传 url（播放地址，如 /play/96518-3-1.html），与 Python 引擎
+        // playerContent {"id": url} 协议对齐；此前传 vodId 导致解码失败返回空地址。
+        let params: [String: Any] = ["id": url, "ids": url, "flag": flag, "url": url]
         // kstore bundle 实测注册的是 /spider/{key}/3/play（/3/player 恒 404）；
         // 兼容旧 TVBox 协议只注册 player 的蜘蛛/bundle：play 404 时回退 player，并缓存偏好。
         if let override = playActionOverride {
