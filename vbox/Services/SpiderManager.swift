@@ -2094,25 +2094,38 @@ globalThis.__JS_SPIDER__ = _spider;
 
         switch source.category {
         case .api, .cloudCMS, .zhanyuan:
-            guard let api = source.api else { return [] }
-            let baseAPI = api.hasSuffix("/") ? String(api.dropLast()) : api
-            let urlStr = "\(baseAPI)?ac=list&t=\(categoryTypeId)&pg=\(page)\(filterQuery)"
-            guard let url = URL(string: urlStr) else { return [] }
-            do {
-                var req = URLRequest(url: url)
-                req.timeoutInterval = 10
-                req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
-                let (data, response) = try await URLSession.shared.data(for: req)
+            // 查找云盘站点配置（siteKey = site.name），供 HTML 分类页兜底使用
+            let cloudSite = loadCloudSitesFromJSONConfig().first { $0.name == source.siteKey }
+            // 优先走 JSON API（ac=list）；空结果时降级到 HTML 分类页解析
+            if let api = source.api, !filterQuery.contains("&") || filters == nil {
+                let baseAPI = api.hasSuffix("/") ? String(api.dropLast()) : api
+                let urlStr = "\(baseAPI)?ac=list&t=\(categoryTypeId)&pg=\(page)\(filterQuery)"
+                if let url = URL(string: urlStr) {
+                    do {
+                        var req = URLRequest(url: url)
+                        req.timeoutInterval = 10
+                        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+                        let (data, response) = try await URLSession.shared.data(for: req)
 
-                guard let httpResp = response as? HTTPURLResponse,
-                      (200...299).contains(httpResp.statusCode) else { return [] }
-
-                let raw = try JSONDecoder().decode(CategoryContentResult.self, from: data)
-                return raw.list ?? []
-            } catch {
-                print("[SpiderManager] singleSourceCategory[\(source.name)] 失败: \(error.localizedDescription)")
-                return []
+                        if let httpResp = response as? HTTPURLResponse,
+                              (200...299).contains(httpResp.statusCode) {
+                            let raw = try? JSONDecoder().decode(CategoryContentResult.self, from: data)
+                            if let list = raw?.list, !list.isEmpty {
+                                return list
+                            }
+                            print("[SpiderManager] singleSourceCategory[\(source.name)] JSON 为空，尝试 HTML 分类页兜底")
+                        }
+                    } catch {
+                        print("[SpiderManager] singleSourceCategory[\(source.name)] JSON 失败: \(error.localizedDescription)，尝试 HTML 分类页兜底")
+                    }
+                }
             }
+            // HTML 分类页兜底
+            if let cloudSite {
+                let items = await fetchCloudCategoryHTML(site: cloudSite, categoryTypeId: categoryTypeId, page: page, filters: filters)
+                if !items.isEmpty { return items }
+            }
+            return []
 
         case .jsSpider, .music:
             guard let key = source.engineKey, let engine = engines[key] else {
@@ -2139,6 +2152,61 @@ globalThis.__JS_SPIDER__ = _spider;
             }
 
         case .cloudForum, .cloudSPA:
+            // 单页/论坛型网盘源：直接通过 HTML 分类页解析
+            let cloudSite = loadCloudSitesFromJSONConfig().first { $0.name == source.siteKey }
+            guard let cloudSite else { return [] }
+            let items = await fetchCloudCategoryHTML(site: cloudSite, categoryTypeId: categoryTypeId, page: page, filters: filters)
+            return items
+        }
+    }
+
+    /// 通过站点配置的 categoryURL 模板抓取分类页 HTML 并解析视频条目
+    private func fetchCloudCategoryHTML(site: CloudSiteConfig, categoryTypeId: String, page: Int, filters: CategoryFilterParams? = nil) async -> [VodItem] {
+        guard let template = site.categoryURL, !template.isEmpty else {
+            print("[SpiderManager] fetchCloudCategoryHTML[\(site.name)] 未配置 categoryURL")
+            return []
+        }
+        let pageStr = "\(page)"
+        // 若配置了 categoryIdMap，将导航分类 ID（如 slug）映射为分类页真实 ID（如数字 typeid）
+        let mappedId = site.categoryIdMap?[categoryTypeId] ?? categoryTypeId
+        let urlPath = template
+            .replacingOccurrences(of: "{id}", with: mappedId)
+            .replacingOccurrences(of: "{page}", with: pageStr)
+        let fullURL = urlPath.hasPrefix("http") ? urlPath : site.detailBase + urlPath
+        print("[SpiderManager] fetchCloudCategoryHTML[\(site.name)] \(fullURL)")
+
+        guard let url = URL(string: fullURL) else { return [] }
+        do {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 10
+            req.setValue(site.ua == "pc" ? cloudPcUA : cloudMobileUA, forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let httpResp = response as? HTTPURLResponse,
+                  (200...299).contains(httpResp.statusCode) else {
+                print("[SpiderManager] fetchCloudCategoryHTML[\(site.name)] HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+                return []
+            }
+            guard let html = String(data: data, encoding: .utf8), !html.isEmpty else { return [] }
+
+            var seenIDs = Set<String>()
+            var items: [VodItem] = []
+            // 优先使用站点 detailPattern，否则用通用模式
+            if let custom = site.detailPattern, !custom.isEmpty {
+                items = extractItemsWithPattern(html: html, pattern: custom, siteBase: site.detailBase, sourceName: site.name, seenIDs: &seenIDs)
+            }
+            if items.isEmpty {
+                items = extractItemsWithPattern(
+                    html: html,
+                    pattern: #"<a[^>]*href="((?:/index\.php/vod/detail/id/|/voddetail/|/detail/|/vod/)(\d+)\.html)[^"]*"[^>]*>(.+?)</a>"#,
+                    siteBase: site.detailBase,
+                    sourceName: site.name,
+                    seenIDs: &seenIDs
+                )
+            }
+            print("[SpiderManager] fetchCloudCategoryHTML[\(site.name)] 解析到 \(items.count) 条")
+            return items
+        } catch {
+            print("[SpiderManager] fetchCloudCategoryHTML[\(site.name)] 失败: \(error.localizedDescription)")
             return []
         }
     }
@@ -2833,6 +2901,8 @@ globalThis.__JS_SPIDER__ = _spider;
         var resultField: String?
         var titleField: String?
         var urlField: String?
+        /// 详情页 URL 模板（可选，仅 spa 类型生效）：将 urlField 的值替换进 {id} 占位符，如 /mv/{id}.html
+        var urlTemplate: String?
         /// 自定义详情页链接正则（可选，仅 cms 类型生效，覆盖默认正则）
         var detailPattern: String?
         /// 额外网盘域名白名单（可选，追加到默认列表，所有类型生效）
@@ -2841,6 +2911,13 @@ globalThis.__JS_SPIDER__ = _spider;
         var extraPanNames: [String: String]?
         /// 备用搜索 URL 列表（可选，仅 cms 类型生效，搜索时轮询尝试）
         var searchurls: [String]?
+        /// 分类页 URL 模板（可选，所有类型生效）：{id} 替换分类ID，{page} 替换页码。如 /vodtype/{id}-{page}.html
+        var categoryURL: String?
+        /// 分类链接提取正则（可选，首页解析分类时优先使用）：捕获 1 = 分类路径/ID，捕获 2 = 分类名
+        var categoryRegex: String?
+        /// 分类 ID 映射（可选）：导航提取出的分类 ID → 分类页 URL 中使用的真实 ID。
+        /// 适用于导航用 slug（如 /movie/）而分类页需要数字 typeid（如 list_2_2.html）的站点。
+        var categoryIdMap: [String: String]?
     }
 
     /// 云盘搜索引擎入口（按类型分发）
@@ -3574,9 +3651,21 @@ globalThis.__JS_SPIDER__ = _spider;
             let uField = site.urlField ?? "url"
             var items: [VodItem] = []
             for entry in list.prefix(20) {
-                guard let title = entry[tField] as? String,
-                      let detailURL = entry[uField] as? String else { continue }
-                let fullURL = detailURL.hasPrefix("http") ? detailURL : site.detailBase + detailURL
+                guard let title = entry[tField] as? String else { continue }
+                // 兼容 JSON 数字 id（如 qwmkv 的 id: 365537），转成字符串
+                let rawDetail = entry[uField]
+                let detailValue: String
+                if let s = rawDetail as? String { detailValue = s }
+                else if let num = rawDetail as? NSNumber { detailValue = num.stringValue }
+                else { continue }
+                // urlTemplate 存在时，把字段值替换进 {id} 占位符（如 /mv/{id}.html）
+                let fullURL: String
+                if let template = site.urlTemplate {
+                    let templated = template.replacingOccurrences(of: "{id}", with: detailValue)
+                    fullURL = templated.hasPrefix("http") ? templated : site.detailBase + templated
+                } else {
+                    fullURL = detailValue.hasPrefix("http") ? detailValue : site.detailBase + detailValue
+                }
                 // 天翼云盘：title 常携带"（访问码：xxx）"，拼回链接避免 shareinfo 400
                 let enrichedURL = enrichTianyiAccessCode(url: fullURL, context: title)
                 items.append(VodItem(vodId: enrichedURL, vodName: title, vodPic: "", vodRemarks: site.name))
@@ -5120,7 +5209,8 @@ globalThis.__JS_SPIDER__ = _spider;
         case .jsSpider, .music:
             return await fetchJSSpiderHomeData(source: source)
         case .cloudForum, .cloudSPA:
-            return nil  // 不支持首页，降级为搜索入口
+            // 单页/论坛型网盘源：尝试 HTML 首页兜底，失败再降级为搜索入口
+            return await fetchHTMLHomeFallback(source: source)
         }
     }
 
@@ -5187,36 +5277,43 @@ globalThis.__JS_SPIDER__ = _spider;
     /// HTML 首页降级方案：抓取站点首页 HTML，解析视频条目
     /// 用于 JSON API 不可用的纯前端 CMS 站点
     private func fetchHTMLHomeFallback(source: SourceDisplayItem) async -> SourceHomeData? {
+        // 查找云盘站点配置（siteKey = site.name），优先使用其 detailBase 与自定义解析规则
+        let cloudSite = loadCloudSitesFromJSONConfig().first { $0.name == source.siteKey }
+
         // 从 source 中推导站点首页 URL
         let siteBase: String?
-        switch source.category {
-        case .cloudCMS:
-            // cloudCMS 的 api 是 {detailBase}/api.php/provide/vod，首页是 {detailBase}
-            if let api = source.api {
-                // 去掉 /api.php/provide/vod 后缀
-                let apiStr = api.hasSuffix("/") ? String(api.dropLast()) : api
-                if let range = apiStr.range(of: "/api.php/provide/vod", options: .backwards) {
-                    siteBase = String(apiStr[..<range.lowerBound])
-                } else if let range = apiStr.range(of: "/index.php", options: .backwards) {
-                    siteBase = String(apiStr[..<range.lowerBound])
+        if let cloudSite {
+            siteBase = cloudSite.detailBase
+        } else {
+            switch source.category {
+            case .cloudCMS:
+                // cloudCMS 的 api 是 {detailBase}/api.php/provide/vod，首页是 {detailBase}
+                if let api = source.api {
+                    // 去掉 /api.php/provide/vod 后缀
+                    let apiStr = api.hasSuffix("/") ? String(api.dropLast()) : api
+                    if let range = apiStr.range(of: "/api.php/provide/vod", options: .backwards) {
+                        siteBase = String(apiStr[..<range.lowerBound])
+                    } else if let range = apiStr.range(of: "/index.php", options: .backwards) {
+                        siteBase = String(apiStr[..<range.lowerBound])
+                    } else {
+                        siteBase = apiStr
+                    }
                 } else {
-                    siteBase = apiStr
+                    siteBase = nil
                 }
-            } else {
+            case .api:
+                // api 字段通常是 https://xxx.com/api.php/provide/vod，首页需要从域名提取
+                if let api = source.api, let url = URL(string: api), let host = url.host {
+                    let scheme = url.scheme ?? "https"
+                    siteBase = "\(scheme)://\(host)"
+                } else {
+                    siteBase = source.api
+                }
+            case .zhanyuan:
+                siteBase = source.searchUrl
+            default:
                 siteBase = nil
             }
-        case .api:
-            // api 字段通常是 https://xxx.com/api.php/provide/vod，首页需要从域名提取
-            if let api = source.api, let url = URL(string: api), let host = url.host {
-                let scheme = url.scheme ?? "https"
-                siteBase = "\(scheme)://\(host)"
-            } else {
-                siteBase = source.api
-            }
-        case .zhanyuan:
-            siteBase = source.searchUrl
-        default:
-            siteBase = nil
         }
 
         guard let base = siteBase else { return nil }
@@ -5239,7 +5336,7 @@ globalThis.__JS_SPIDER__ = _spider;
             guard let html = String(data: data, encoding: .utf8), !html.isEmpty else { return nil }
 
             // 从 HTML 首页提取视频条目和分类
-            let (videos, cats) = extractHTMLHomePage(from: html, siteBase: homeURLStr, sourceName: source.name)
+            let (videos, cats) = extractHTMLHomePage(from: html, siteBase: homeURLStr, sourceName: source.name, site: cloudSite)
             guard !videos.isEmpty else { return nil }
 
             print("[SpiderManager] HTML降级[\(source.name)] 成功: \(videos.count)条视频, \(cats.count)个分类")
@@ -5256,13 +5353,35 @@ globalThis.__JS_SPIDER__ = _spider;
     }
 
     /// 从 CMS 站点首页 HTML 中提取视频列表和分类导航
-    private func extractHTMLHomePage(from html: String, siteBase: String, sourceName: String) -> (videos: [VodItem], categories: [VodCategory]) {
+    private func extractHTMLHomePage(from html: String, siteBase: String, sourceName: String, site: CloudSiteConfig? = nil) -> (videos: [VodItem], categories: [VodCategory]) {
         var videos: [VodItem] = []
         var categories: [VodCategory] = []
         var seenIDs = Set<String>()
 
-        // 1. 提取分类导航：匹配各种 CMS 模板的分类链接
-        let catPatterns = [
+        // 1. 提取分类导航：优先使用站点自定义 categoryRegex，否则匹配各种 CMS 模板的分类链接
+        if let customCatRegex = site?.categoryRegex, !customCatRegex.isEmpty,
+           let regex = try? NSRegularExpression(pattern: customCatRegex, options: []) {
+            let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html))
+            for match in matches {
+                guard match.numberOfRanges >= 3 else { continue }
+                guard let idRange = Range(match.range(at: 1), in: html),
+                      let nameRange = Range(match.range(at: 2), in: html) else { continue }
+                var typeId = String(html[idRange])
+                    .replacingOccurrences(of: #"^(?:https?://[^/]+)?"#, with: "", options: .regularExpression)
+                typeId = typeId.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                if typeId.isEmpty { continue }
+                let typeName = String(html[nameRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !typeName.isEmpty, typeName.count < 12,
+                      !typeName.contains("首页"), !typeName.contains("地图"),
+                      !typeName.contains("APP"), !typeName.contains("留言") else { continue }
+                let cat = VodCategory(typeId: typeId, typeName: typeName)
+                if !categories.contains(where: { $0.typeId == typeId }) {
+                    categories.append(cat)
+                }
+            }
+        }
+        if categories.isEmpty {
+            let catPatterns = [
             // AppleCMS 标准：/index.php/vod/type/id/1.html
             #"href="(/index\.php/vod/type/id/(\d+)\.html)"[^>]*>([^<]+)</a>"#,
             // AppleCMS 变体：/vodtype/1.html
@@ -5313,8 +5432,13 @@ globalThis.__JS_SPIDER__ = _spider;
             if !categories.isEmpty { break }
         }
 
-        // 2. 提取视频条目：匹配详情链接 + 图片 + 标题
-        let videoPatterns = [
+        // 2. 提取视频条目：优先使用站点自定义 detailPattern，否则匹配常见模板（封面图 + 标题 + 链接）
+        if let customDetail = site?.detailPattern, !customDetail.isEmpty {
+            let extracted = extractItemsWithPattern(html: html, pattern: customDetail, siteBase: siteBase, sourceName: sourceName, seenIDs: &seenIDs)
+            videos.append(contentsOf: extracted)
+        }
+        if videos.isEmpty {
+            let videoPatterns = [
             // 标准模板：封面图 + 标题 + 链接（.html 后缀）
             #"<a\s+href="((?:/index\.php/vod/detail/id/|/voddetail/|/detail/|/vod/)(\d+)\.html)[^"]*"[^>]*>.*?<img[^>]*data-original="([^"]*)"[^>]*>.*?</a>"#,
             #"<a\s+href="((?:/index\.php/vod/detail/id/|/voddetail/|/detail/|/vod/)(\d+)\.html)[^"]*"[^>]*>.*?<img[^>]*data-src="([^"]*)"[^>]*>.*?</a>"#,
@@ -5403,6 +5527,78 @@ globalThis.__JS_SPIDER__ = _spider;
         }
 
         return (videos, categories)
+    }
+
+    /// 使用自定义 detailPattern 从 HTML 中提取视频条目
+    /// detailPattern 捕获约定：组 1 = 详情页路径（可含完整URL），组 2 = 数字ID（可选），组 3 = 标题文本（可选）
+    private func extractItemsWithPattern(html: String, pattern: String, siteBase: String, sourceName: String, seenIDs: inout Set<String>) -> [VodItem] {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return [] }
+        let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html))
+        var items: [VodItem] = []
+
+        for match in matches {
+            guard match.numberOfRanges >= 2 else { continue }
+            guard let hrefRange = Range(match.range(at: 1), in: html) else { continue }
+            var detailPath = String(html[hrefRange])
+                .replacingOccurrences(of: #"^(?:https?://[^/]+)?"#, with: "", options: .regularExpression)
+            if detailPath.hasPrefix("//") { detailPath = String(detailPath.dropFirst(2)) }
+            if detailPath.isEmpty { continue }
+
+            // 提取标题：优先取组 3，否则在链接附近查找
+            var title = ""
+            if match.numberOfRanges >= 4, match.range(at: 3).location != NSNotFound,
+               let tRange = Range(match.range(at: 3), in: html) {
+                title = String(html[tRange])
+                    .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if title.count < 2 || title.count > 80 || title.contains("首页") {
+                title = extractTitleNearLink(html: html, matchRange: match.range)
+            }
+            if title.count < 2 || title.contains("首页") || title.contains("网址") || title.contains("APP") { continue }
+
+            // 去重：用详情路径作为唯一键
+            let dedupeKey = detailPath
+            guard seenIDs.insert(dedupeKey).inserted else { continue }
+
+            // 提取缩略图：从当前匹配项附近查找
+            var pic = ""
+            let imgPattern = #"<img[^>]+(?:data-original|data-src|src)="([^"]+)""#
+            if let imgRegex = try? NSRegularExpression(pattern: imgPattern, options: [.caseInsensitive]) {
+                let searchStart = max(0, match.range.location - 200)
+                let searchEnd = min(match.range.location + match.range.length + 400, html.count)
+                if searchStart < searchEnd {
+                    let searchRange = NSRange(location: searchStart, length: searchEnd - searchStart)
+                    if let imgMatch = imgRegex.firstMatch(in: html, range: searchRange),
+                       let pRange = Range(imgMatch.range(at: 1), in: html) {
+                        pic = String(html[pRange])
+                    }
+                }
+            }
+
+            let fullPic: String
+            if pic.hasPrefix("http") {
+                fullPic = pic
+            } else if pic.hasPrefix("//") {
+                fullPic = "https:" + pic
+            } else if !pic.isEmpty {
+                fullPic = siteBase + (pic.hasPrefix("/") ? "" : "/") + pic
+            } else {
+                fullPic = ""
+            }
+
+            let detailURL = detailPath.hasPrefix("http") ? detailPath : siteBase + detailPath
+            let (vodYear, vodArea) = extractYearAndAreaNearLink(html: html, matchRange: match.range)
+            items.append(VodItem(
+                vodId: detailURL,
+                vodName: title,
+                vodPic: fullPic,
+                vodRemarks: "☁️" + sourceName,
+                vodYear: vodYear,
+                vodArea: vodArea
+            ))
+        }
+        return items
     }
 
     /// 从 HTML 中提取标题文本（同源提取：标题与封面来自同一个 <a>...</a> 块）

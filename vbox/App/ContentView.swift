@@ -165,6 +165,17 @@ struct ContentView: View {
                     }
                 }
             }
+            // 最短展示时长到达后：数据已就绪则立即淡出。
+            // 否则 onChange(homeDataReady) 只在数据变化瞬间触发一次，
+            // 提前就绪时 3.5s 内无人再调度，会空等到 10s 兜底。
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(splashMinHold * 1_000_000_000))
+                await MainActor.run {
+                    if splashMonitor.homeDataReady {
+                        dismissSplashIfNeeded()
+                    }
+                }
+            }
             // 10 秒兜底：首页数据迟迟未就绪时强制退出启动页，避免卡启动页
             Task {
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
