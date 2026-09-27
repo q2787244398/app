@@ -43,6 +43,8 @@ jobs:
           bash scripts/fetch_mpv_dependencies.sh --cache-dir .mpv-cache
         env:
           MPVKIT_DEPS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 从当前仓库读取 MPVKit 依赖包（release: mpvkit-deps-0.0.1）
+          MPVKIT_DEPS_REPO: ${{ github.repository }}
 
       - name: Check installed dependencies
         run: |

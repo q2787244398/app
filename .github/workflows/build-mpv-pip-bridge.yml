@@ -39,6 +39,8 @@ jobs:
           python3 scripts/check_mpv_installed_dependencies.py
         env:
           MPVKIT_DEPS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 从当前仓库读取 MPVKit 依赖包（release: mpvkit-deps-0.0.1）
+          MPVKIT_DEPS_REPO: ${{ github.repository }}
 
       - name: Inject MPVKit Link & Embed
         run: |
