@@ -2192,7 +2192,7 @@ globalThis.__JS_SPIDER__ = _spider;
             var items: [VodItem] = []
             // 优先使用站点 detailPattern，否则用通用模式
             if let custom = site.detailPattern, !custom.isEmpty {
-                items = extractItemsWithPattern(html: html, pattern: custom, siteBase: site.detailBase, sourceName: site.name, seenIDs: &seenIDs)
+                items = extractItemsWithPattern(html: html, pattern: custom, siteBase: site.detailBase, sourceName: site.name, seenIDs: &seenIDs, markAsCloud: true)
             }
             if items.isEmpty {
                 items = extractItemsWithPattern(
@@ -2200,7 +2200,8 @@ globalThis.__JS_SPIDER__ = _spider;
                     pattern: #"<a[^>]*href="((?:/index\.php/vod/detail/id/|/voddetail/|/detail/|/vod/)(\d+)\.html)[^"]*"[^>]*>(.+?)</a>"#,
                     siteBase: site.detailBase,
                     sourceName: site.name,
-                    seenIDs: &seenIDs
+                    seenIDs: &seenIDs,
+                    markAsCloud: true
                 )
             }
             print("[SpiderManager] fetchCloudCategoryHTML[\(site.name)] 解析到 \(items.count) 条")
@@ -5277,6 +5278,14 @@ globalThis.__JS_SPIDER__ = _spider;
     /// HTML 首页降级方案：抓取站点首页 HTML，解析视频条目
     /// 用于 JSON API 不可用的纯前端 CMS 站点
     private func fetchHTMLHomeFallback(source: SourceDisplayItem) async -> SourceHomeData? {
+        // 只有真正的网盘站（本身无 JSON API、靠 HTML 解析）才打 ☁️ 标记；
+        // API 源/站源走兜底属于降级，不应伪装成网盘资源（否则详情页会误入网盘版式）。
+        let markAsCloud: Bool
+        switch source.category {
+        case .cloudCMS, .cloudForum, .cloudSPA: markAsCloud = true
+        default: markAsCloud = false
+        }
+
         // 查找云盘站点配置（siteKey = site.name），优先使用其 detailBase 与自定义解析规则
         let cloudSite = loadCloudSitesFromJSONConfig().first { $0.name == source.siteKey }
 
@@ -5336,7 +5345,7 @@ globalThis.__JS_SPIDER__ = _spider;
             guard let html = String(data: data, encoding: .utf8), !html.isEmpty else { return nil }
 
             // 从 HTML 首页提取视频条目和分类
-            let (videos, cats) = extractHTMLHomePage(from: html, siteBase: homeURLStr, sourceName: source.name, site: cloudSite)
+            let (videos, cats) = extractHTMLHomePage(from: html, siteBase: homeURLStr, sourceName: source.name, site: cloudSite, markAsCloud: markAsCloud)
             guard !videos.isEmpty else { return nil }
 
             print("[SpiderManager] HTML降级[\(source.name)] 成功: \(videos.count)条视频, \(cats.count)个分类")
@@ -5353,7 +5362,8 @@ globalThis.__JS_SPIDER__ = _spider;
     }
 
     /// 从 CMS 站点首页 HTML 中提取视频列表和分类导航
-    private func extractHTMLHomePage(from html: String, siteBase: String, sourceName: String, site: CloudSiteConfig? = nil) -> (videos: [VodItem], categories: [VodCategory]) {
+    /// markAsCloud：是否给条目打 ☁️ 标记（只有真正的网盘站才为 true）
+    private func extractHTMLHomePage(from html: String, siteBase: String, sourceName: String, site: CloudSiteConfig? = nil, markAsCloud: Bool) -> (videos: [VodItem], categories: [VodCategory]) {
         var videos: [VodItem] = []
         var categories: [VodCategory] = []
         var seenIDs = Set<String>()
@@ -5435,7 +5445,7 @@ globalThis.__JS_SPIDER__ = _spider;
 
         // 2. 提取视频条目：优先使用站点自定义 detailPattern，否则匹配常见模板（封面图 + 标题 + 链接）
         if let customDetail = site?.detailPattern, !customDetail.isEmpty {
-            let extracted = extractItemsWithPattern(html: html, pattern: customDetail, siteBase: siteBase, sourceName: sourceName, seenIDs: &seenIDs)
+            let extracted = extractItemsWithPattern(html: html, pattern: customDetail, siteBase: siteBase, sourceName: sourceName, seenIDs: &seenIDs, markAsCloud: markAsCloud)
             videos.append(contentsOf: extracted)
         }
         if videos.isEmpty {
@@ -5482,7 +5492,7 @@ globalThis.__JS_SPIDER__ = _spider;
                     vodId: detailURL,
                     vodName: title,
                     vodPic: fullPic,
-                    vodRemarks: "☁️" + sourceName,
+                    vodRemarks: (markAsCloud ? "☁️" : "") + sourceName,
                     vodYear: vodYear,
                     vodArea: vodArea
                 )
@@ -5517,7 +5527,7 @@ globalThis.__JS_SPIDER__ = _spider;
                         vodId: detailURL,
                         vodName: title,
                         vodPic: "",
-                        vodRemarks: "☁️" + sourceName,
+                        vodRemarks: (markAsCloud ? "☁️" : "") + sourceName,
                         vodYear: vodYear,
                         vodArea: vodArea
                     )
@@ -5533,7 +5543,7 @@ globalThis.__JS_SPIDER__ = _spider;
 
     /// 使用自定义 detailPattern 从 HTML 中提取视频条目
     /// detailPattern 捕获约定：组 1 = 详情页路径（可含完整URL），组 2 = 数字ID（可选），组 3 = 标题文本（可选）
-    private func extractItemsWithPattern(html: String, pattern: String, siteBase: String, sourceName: String, seenIDs: inout Set<String>) -> [VodItem] {
+    private func extractItemsWithPattern(html: String, pattern: String, siteBase: String, sourceName: String, seenIDs: inout Set<String>, markAsCloud: Bool) -> [VodItem] {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return [] }
         let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html))
         var items: [VodItem] = []
@@ -5595,7 +5605,7 @@ globalThis.__JS_SPIDER__ = _spider;
                 vodId: detailURL,
                 vodName: title,
                 vodPic: fullPic,
-                vodRemarks: "☁️" + sourceName,
+                vodRemarks: (markAsCloud ? "☁️" : "") + sourceName,
                 vodYear: vodYear,
                 vodArea: vodArea
             ))

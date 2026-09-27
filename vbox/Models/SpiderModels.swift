@@ -184,6 +184,30 @@ struct VodCategory: Codable, Identifiable, Equatable {
         case typeId = "type_id"
         case typeName = "type_name"
     }
+
+    // 显式 memberwise init：一旦自定义 init(from:)，编译器就不再自动合成该构造器，
+    // 而全项目有多处 VodCategory(typeId:typeName:) 调用，必须显式补上。
+    init(typeId: String, typeName: String) {
+        self.typeId = typeId
+        self.typeName = typeName
+    }
+
+    // 容错解码：部分 API 源（TY影视/360资源等）的 type_id 为数字（Int），
+    // 原严格 String 解码会让整条 class 解析失败、触发 HTML 兜底。这里统一 String 优先、数字转字符串。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        typeId = Self.stringOrNumber(c, .typeId) ?? ""
+        typeName = Self.stringOrNumber(c, .typeName) ?? ""
+    }
+
+    private static func stringOrNumber(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ k: CodingKeys
+    ) -> String? {
+        if let s = try? c.decodeIfPresent(String.self, forKey: k), !s.isEmpty { return s }
+        if let n = try? c.decodeIfPresent(Int.self, forKey: k) { return String(n) }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return String(d) }
+        return nil
+    }
 }
 
 struct VodItem: Codable, Identifiable {
