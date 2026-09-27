@@ -5431,6 +5431,7 @@ globalThis.__JS_SPIDER__ = _spider;
             }
             if !categories.isEmpty { break }
         }
+        }
 
         // 2. 提取视频条目：优先使用站点自定义 detailPattern，否则匹配常见模板（封面图 + 标题 + 链接）
         if let customDetail = site?.detailPattern, !customDetail.isEmpty {
@@ -5488,6 +5489,7 @@ globalThis.__JS_SPIDER__ = _spider;
                 videos.append(item)
             }
             if !videos.isEmpty { break }
+        }
         }
 
         // 3. 如果上面没匹配到（某些模板结构不同），用更宽松的匹配
