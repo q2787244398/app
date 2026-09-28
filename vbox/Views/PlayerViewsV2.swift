@@ -1169,7 +1169,7 @@ class PlayerState: ObservableObject {
     ///   - driveType: 网盘类型。仅用于区分「原生 UC」与「UC网盘Node」的 UC 流——
     ///     两者的 URL 可能完全一样（同为 *.cdn.yun.cn CDN 直链），仅凭 URL 无法区分，
     ///     需靠 driveType 精确命中；两者的内核优先级一致（MDK 优先、排除 MPV）。
-    private func preferredCompatibilityEngineName(for url: URL? = nil, driveType: DriveTypeAlias? = nil) -> String {
+    private func preferredCompatibilityEngineName(for url: URL? = nil, driveType: DriveTypeAlias? = nil, resourceNameHint: String? = nil) -> String {
         switch enginePreference {
         case .mdk:
             return isMDKBuildAvailable ? "MDK" : "VLC"
@@ -1182,6 +1182,15 @@ class PlayerState: ObservableObject {
         case .ali:
             return isAliPlayerBuildAvailable ? "AliPlayer" : (isMPVBuildAvailable ? "MPV-MoltenVK" : "VLC")
         case .auto:
+            // 仅 139 云盘：真实文件名是 AVPlayer 必不支持的硬容器（ISO/M2TS/RMVB/AVI/FLV/MKV）时，
+            // 优先 MDK 并排除 MPV-MoltenVK（MPV 在 139 直链上会有声无画并闪退）。
+            // 闸门钉死 driveType == .pan139，其它网盘传了 hint 也不会命中。
+            if driveType == .pan139, let hint = resourceNameHint, hardContainerReason(for: hint) != nil {
+                if isMDKBuildAvailable { return "MDK" }
+                if isIJKBuildAvailable { return "IJKPlayer" }
+                if isVLCBuildAvailable { return "VLC" }
+                if isMPVBuildAvailable { return "MPV-MoltenVK" }
+            }
             // UC 流（CDN 直链 或 本地 uc-stream 代理）必须在通用规则之前按网盘类型分流：
             // URL 判定无法区分原生 UC 与 UC网盘Node（同为 *.cdn.yun.cn），只能依赖 driveType。
             if isUCStreamURL(url) {
@@ -1321,6 +1330,23 @@ class PlayerState: ObservableObject {
             ("atmos", "Atmos 音轨")
         ]
         return rules.first(where: { lower.contains($0.0) })?.1
+    }
+
+    /// 仅收录 AVPlayer「必定打不开」的硬容器；刻意不含 mp4/m3u8/mov/webm/hevc/hdr，
+    /// 避免把 139 上 AVPlayer 本就能播的资源误推兼容内核。
+    private static let hardUnsupportedContainers: [(String, String)] = [
+        (".iso", "ISO 镜像"),
+        (".m2ts", "M2TS 原盘"),
+        (".vob", "DVD VOB"),
+        (".rmvb", "RMVB 封装"),
+        (".flv", "FLV 封装"),
+        (".avi", "AVI 封装"),
+        (".mkv", "MKV 封装")
+    ]
+
+    private func hardContainerReason(for fileName: String) -> String? {
+        let lower = fileName.lowercased()
+        return Self.hardUnsupportedContainers.first(where: { lower.contains($0.0) })?.1
     }
 
     private func compatibilityReason(for fileName: String) -> String? {
@@ -4035,6 +4061,25 @@ class PlayerState: ObservableObject {
             let kind = playlistKind ?? .unknown
             let reason = kind == .fmp4 ? "#EXT-X-MAP/.m4s" : (kind == .ts ? "TS切片" : "m3u8未探测到fMP4特征")
             logEngineResolver(resourceName: resourceName, url: urlObj, playlistKind: kind, engine: "AVPlayer", reason: reason)
+        } else if enginePreference == .auto, driveType == .pan139,
+                  let pan139Hint = resourceNameHint, !pan139Hint.isEmpty,
+                  let pan139Reason = hardContainerReason(for: pan139Hint),
+                  (isMDKBuildAvailable || isIJKBuildAvailable || isVLCBuildAvailable) {
+            // 仅 139 云盘：真实文件名是 AVPlayer 必不支持的硬容器（ISO/MKV/RMVB/AVI/FLV…）时，
+            // 139 取链返回 EOS 直链（无扩展名、非 /spider/push 代理），会落到默认 AVPlayer
+            // 报 -11828/-12847。此处直接禁用 AVPlayer，走 MDK 优先（FFmpeg 按内容探测）。
+            // 闸门钉死 driveType == .pan139 —— 其它网盘 / 蜘蛛资源不进入本分支。
+            let pan139Engine = isMDKBuildAvailable ? "MDK" : (isIJKBuildAvailable ? "IJKPlayer" : "VLC")
+            await MainActor.run {
+                guard playbackSessionId == sessionId else { return }
+                playbackEngineMode = .compatibility
+                compatibilityHint = pan139Reason
+                currentPiPStrategy = compatibilityPiPStrategy(engineName: pan139Engine, url: urlObj)
+                loadingMessage = "正在使用兼容内核..."
+            }
+            logEngineResolver(resourceName: pan139Hint, url: urlObj, playlistKind: playlistKind,
+                              engine: pan139Engine,
+                              reason: "[139]真实文件名命中\(pan139Reason)（禁用AVPlayer，MDK优先）")
         } else if enginePreference == .auto, shouldPreferIJK(for: urlObj) {
             await MainActor.run {
                 guard playbackSessionId == sessionId else { return }
@@ -4073,7 +4118,7 @@ class PlayerState: ObservableObject {
         guard await MainActor.run(body: { self.playbackSessionId == sessionId }) else { return }
 
         if shouldUseCompatibilityEngine {
-            let engineName = preferredCompatibilityEngineName(for: urlObj, driveType: driveType)
+            let engineName = preferredCompatibilityEngineName(for: urlObj, driveType: driveType, resourceNameHint: resourceNameHint)
             log("[PlayerV2] 使用 \(engineName) 兼容内核播放：\(compatibilityHint ?? "特殊格式")")
             await MainActor.run {
                 guard playbackSessionId == sessionId else { return }
@@ -6228,7 +6273,7 @@ class PlayerState: ObservableObject {
             await MainActor.run {
                 currentEpisodeIndex = episode.id
             }
-            await playResolvedDriveVideo(result)
+            await playResolvedDriveVideo(result, resourceNameHint: episode.name)
         } catch {
             log("[139] 切集失败: \(error.localizedDescription)")
             await MainActor.run {
