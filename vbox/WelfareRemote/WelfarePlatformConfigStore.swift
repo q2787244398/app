@@ -362,6 +362,9 @@ final class WelfarePlatformConfigStore: ObservableObject {
         self.config = nil
         self.loadState = .idle
         self.lastSuccessTime = nil
+        // 允许再次 bootstrap 自动重载；否则清缓存后本会话内 bootstrap() 会被幂等 guard 拦掉，
+        // 导致福利专区卡在空状态、只能靠手动「立即同步」才能恢复。
+        self.bootstrapped = false
     }
 }
 
