@@ -70,6 +70,11 @@ struct RemoteWelfareHomeView: View {
             .navigationBarHidden(true)
             .onAppear {
                 configStore.bootstrap()
+                // 进入福利专区时，若启用了远程源，则重读本地最新配置（策略1 读本地文件，不联网）。
+                // 开关关闭时不刷新，保证"清缓存 / 关开关后不显示远程平台"。
+                if configStore.switchEnabled {
+                    configStore.refresh()
+                }
                 loadOrder()
             }
         }
